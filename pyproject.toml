@@ -1,0 +1,39 @@
+[project]
+name = "ibkr-options-bot"
+version = "0.0.0"
+description = "Options trading bot scaffold using IBKR (ib_insync)"
+requires-python = ">=3.11"
+
+dependencies = [
+  "ib_insync",
+  "pydantic>=2",
+  "pandas",
+  "numpy",
+  "pandas-ta",
+  "tenacity",
+  "PyYAML",
+  "python-dotenv",
+  "loguru",
+  "pytz",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black",
+  "ruff",
+  "pytest",
+  "mypy",
+  "types-PyYAML",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+extend-select = ["I"]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"

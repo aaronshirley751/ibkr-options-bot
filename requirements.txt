@@ -1,0 +1,10 @@
+ib_insync
+pydantic>=2
+pandas
+numpy
+pandas-ta
+tenacity
+PyYAML
+python-dotenv
+loguru
+pytz

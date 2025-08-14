@@ -1,0 +1,6 @@
+# Development dependencies
+black
+ruff
+pytest
+mypy
+types-PyYAML
