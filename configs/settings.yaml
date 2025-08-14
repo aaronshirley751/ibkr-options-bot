@@ -1,0 +1,31 @@
+broker:
+  host: "127.0.0.1"
+  port: 4002  # paper default for IB Gateway
+  client_id: 101
+  read_only: false
+
+symbols:
+  - "SPY"
+  - "QQQ"
+
+mode: "growth"  # growth | hybrid
+
+schedule:
+  interval_seconds: 180
+
+risk:
+  max_risk_pct_per_trade: 0.10
+  max_daily_loss_pct: 0.15
+  take_profit_pct: 0.30
+  stop_loss_pct: 0.20
+  whale_alloc_pct: 0.15
+
+options:
+  expiry: "weekly"     # "weekly" picker
+  moneyness: "atm"     # atm | itmp1 | otmp1
+  max_spread_pct: 2.0  # reject illiquid chains
+  min_volume: 200
+
+journal:
+  path_csv: "logs/trades.csv"
+  path_jsonl: "logs/trades.jsonl"
