@@ -11,6 +11,7 @@ from .strategy.whale_rules import whale_rules
 from .risk import position_size
 from .execution import build_bracket, emulate_oco, is_liquid
 from .journal import log_trade
+from .data.options import pick_weekly_option
 
 
 # Runs a job every `interval_seconds` during regular trading hours (09:30-16:00 ET)
@@ -78,21 +79,28 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 action = whale["signal"]
 
             if action in ("BUY", "SELL", "BUY_CALL", "BUY_PUT"):
-                # select option contract (ATM weekly) via broker
-                contracts = broker.option_chain(symbol)
-                if not contracts:
-                    logger.warning("No option contracts found for %s", symbol)
-                    continue
-
-                # pick direction
+                # pick option using refined selection
                 direction = "C" if action.startswith("BUY") else "P"
-                # naive: find first matching right
-                opt = next((c for c in contracts if c.right == direction), contracts[0])
+                last_under_q = broker.market_data(symbol)
+                last_under = getattr(last_under_q, "last", 0.0)
+                cfg_opts = settings.get("options", {})
+                opt = pick_weekly_option(
+                    broker,
+                    underlying=symbol,
+                    right=direction,
+                    last_price=last_under,
+                    moneyness=cfg_opts.get("moneyness", "atm"),
+                    min_volume=cfg_opts.get("min_volume", 100),
+                    max_spread_pct=cfg_opts.get("max_spread_pct", 2.0),
+                )
+                if not opt:
+                    logger.info("No viable option found for %s", symbol)
+                    continue
 
                 # get option premium
                 q = None
                 try:
-                    q = broker.market_data(opt.symbol if hasattr(opt, "symbol") else opt)
+                    q = broker.market_data(getattr(opt, "symbol", opt))
                     premium = getattr(q, "last", 0.0)
                 except Exception:
                     premium = 0.0
@@ -105,7 +113,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     continue
 
                 # check liquidity
-                cfg_opts = settings.get("options", {})
+                # Re-check liquidity guard with same thresholds
                 if q is None or not is_liquid(q, cfg_opts.get("max_spread_pct", 2.0), cfg_opts.get("min_volume", 100)):
                     logger.info("Option contract illiquid for %s, skipping", symbol)
                     continue
