@@ -66,7 +66,9 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
             df1 = _to_df(bars) if bars is not None else pd.DataFrame()
             if df1.empty or len(df1) < 30:
-                logger.info("Not enough bars for %s, skipping", symbol)
+                logger.bind(event="insufficient_bars", symbol=symbol, bars=len(df1)).info(
+                    "Skipping: insufficient bars"
+                )
                 continue
 
             # compute scalp signal on 1-min bars
@@ -82,6 +84,14 @@ def run_cycle(broker, settings: Dict[str, Any]):
             action = scalp.get("signal", "HOLD")
             if whale.get("signal", "HOLD") != "HOLD":
                 action = whale["signal"]
+
+            logger.bind(
+                event="signal",
+                symbol=symbol,
+                scalp=scalp,
+                whale=whale,
+                action=action,
+            ).info("Cycle decision")
 
             if action in ("BUY", "SELL", "BUY_CALL", "BUY_PUT"):
                 # pick option using refined selection
@@ -99,7 +109,9 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     max_spread_pct=cfg_opts.get("max_spread_pct", 2.0),
                 )
                 if not opt:
-                    logger.info("No viable option found for %s", symbol)
+                    logger.bind(event="skip", symbol=symbol, reason="no_viable_option").info(
+                        "Skipping: no viable option"
+                    )
                     continue
 
                 # get option premium
@@ -114,13 +126,17 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 equity = broker.pnl().get("net", 100000.0)
                 size = position_size(equity, cfg_risk.get("max_risk_pct_per_trade", 0.01), cfg_risk.get("stop_loss_pct", 0.2), premium or 0.0)
                 if size <= 0:
-                    logger.info("Computed size 0 for %s, skipping", symbol)
+                    logger.bind(event="skip", symbol=symbol, reason="size_zero").info(
+                        "Skipping: size zero"
+                    )
                     continue
 
                 # check liquidity
                 # Re-check liquidity guard with same thresholds
                 if q is None or not is_liquid(q, cfg_opts.get("max_spread_pct", 2.0), cfg_opts.get("min_volume", 100)):
-                    logger.info("Option contract illiquid for %s, skipping", symbol)
+                    logger.bind(event="skip", symbol=symbol, reason="illiquid").info(
+                        "Skipping: illiquid contract"
+                    )
                     continue
 
                 # build bracket
@@ -154,7 +170,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     t.start()
 
                 # log trade
-                trade = {"timestamp": datetime.utcnow().isoformat(), "symbol": symbol, "action": ticket.action, "quantity": size, "price": premium, "stop": bracket.get("stop_loss"), "target": bracket.get("take_profit")}
+                trade = {"timestamp": datetime.utcnow().isoformat(), "symbol": symbol, "action": ticket.action, "quantity": size, "price": premium, "stop": bracket.get("stop_loss"), "target": bracket.get("take_profit"), "contract": getattr(opt, "symbol", None)}
                 log_trade(trade)
 
         except Exception:
@@ -163,6 +179,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
 def run_scheduler(broker, settings: Dict[str, Any]):
     interval_seconds = settings.get("schedule", {}).get("interval_seconds", 180)
+    last_day = None
     while True:
         now = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
         if is_rth(now):
@@ -170,4 +187,10 @@ def run_scheduler(broker, settings: Dict[str, Any]):
                 run_cycle(broker, settings)
             except Exception:
                 logger.exception("Scheduler cycle failed")
+            last_day = now.date()
+        else:
+            # if we just ended a trading day, emit a simple summary placeholder
+            if last_day is not None and now.date() != last_day:
+                logger.bind(event="eod_summary").info("End of day summary emitted (stub)")
+                last_day = None
         time.sleep(interval_seconds)
