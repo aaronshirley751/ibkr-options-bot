@@ -171,7 +171,11 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 from .broker.base import OrderTicket
 
                 ticket = OrderTicket(contract=opt, action=("BUY" if action.startswith("BUY") else "SELL"), quantity=size, order_type="MKT", take_profit_pct=cfg_risk.get("take_profit_pct"), stop_loss_pct=cfg_risk.get("stop_loss_pct"))
-                order_id = _with_broker_lock(broker.place_order, ticket)
+                if settings.get("dry_run"):
+                    logger.bind(event="dry_run", symbol=symbol, ticket=ticket.__dict__).info("Dry-run: would place order")
+                    order_id = "DRYRUN"
+                else:
+                    order_id = _with_broker_lock(broker.place_order, ticket)
 
                 # if broker doesn't support native OCO, emulate
                 # run emulate_oco in background thread
@@ -195,8 +199,9 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     t.start()
 
                 # log trade
-                trade = {"timestamp": datetime.utcnow().isoformat(), "symbol": symbol, "action": ticket.action, "quantity": size, "price": premium, "stop": bracket.get("stop_loss"), "target": bracket.get("take_profit"), "contract": getattr(opt, "symbol", None)}
-                log_trade(trade)
+                if not settings.get("dry_run"):
+                    trade = {"timestamp": datetime.utcnow().isoformat(), "symbol": symbol, "action": ticket.action, "quantity": size, "price": premium, "stop": bracket.get("stop_loss"), "target": bracket.get("take_profit"), "contract": getattr(opt, "symbol", None)}
+                    log_trade(trade)
 
         except Exception:
             err = traceback.format_exc()

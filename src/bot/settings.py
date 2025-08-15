@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # top-level
     symbols: List[str] = ["SPY", "QQQ"]
     mode: str = "growth"  # growth | hybrid
+    dry_run: bool = False
 
     # nested
     broker: BrokerSettings = BrokerSettings()

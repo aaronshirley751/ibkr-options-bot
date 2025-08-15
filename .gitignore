@@ -2,3 +2,12 @@ __pycache__/
 .env
 logs/
 .vscode/
+*.env
+*.log
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+*.sqlite

@@ -79,6 +79,14 @@ Safety & risk disclaimer
 - This project is a development scaffold and not financial advice. Trading options involves substantial risk.
 - Test extensively in paper-mode with small sizes before going live.
 - Use the `max_daily_loss_pct` and `max_risk_pct_per_trade` settings to limit exposures.
+ - Set `dry_run: true` in `configs/settings.yaml` to prevent real order placement while testing; the bot will log intended actions only.
+
+Security hardening
+------------------
+
+- Ensure `.env` file is present but not committed (repo `.gitignore` covers it). On Unix systems, restrict permissions: `chmod 600 .env`.
+- Avoid logging secrets. The bot does not print environment variables and only logs high-level events.
+- Keep logs in `logs/` (ignored by git). Rotate is configured via loguru.
 
 
 Start Here
