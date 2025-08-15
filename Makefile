@@ -5,10 +5,10 @@ PIP ?= $(PYTHON) -m pip
 .PHONY: venv fmt test ibkr-deps ibkr-test gateway-up gateway-down gateway-logs ibkr-test-whatif
 
 venv:
-	$(PYTHON) -m venv $(VENV)
-	. $(VENV)/bin/activate && $(PIP) install --upgrade pip
-	. $(VENV)/bin/activate && $(PIP) install -r requirements.txt
-	. $(VENV)/bin/activate && $(PIP) install -r requirements-dev.txt
+	python3 -m venv $(VENV)
+	$(VENV)/bin/python -m pip install --upgrade pip
+	$(VENV)/bin/pip install -r requirements.txt
+	$(VENV)/bin/pip install -r requirements-dev.txt || true
 
 fmt:
 	@if [ -x "$(VENV)/bin/black" ]; then \
@@ -30,7 +30,7 @@ ibkr-deps:
 	@if [ -x "$(VENV)/bin/pip" ]; then \
 		$(VENV)/bin/pip install -r requirements-ibkr.txt; \
 	else \
-		$(PIP) install -r requirements-ibkr.txt; \
+		python3 -m pip install -r requirements-ibkr.txt; \
 	fi
 
 ibkr-test: ibkr-deps
