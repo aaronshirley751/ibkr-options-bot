@@ -228,6 +228,61 @@ class IBKRBroker:
         except Exception:
             return {}
 
+    def historical_prices(self, symbol: str, duration: str = "60 M", bar_size: str = "1 min", what_to_show: str = "TRADES", use_rth: bool = True):
+        """Fetch historical OHLCV bars as a pandas DataFrame indexed by time.
+
+        Args:
+            symbol: Underlying stock symbol.
+            duration: IBKR duration string (e.g., '30 M', '60 M', '1 D').
+            bar_size: IBKR bar size (e.g., '1 min', '5 mins', '1 hour').
+            what_to_show: Data type, default 'TRADES'.
+            use_rth: Restrict to Regular Trading Hours.
+
+        Returns:
+            pd.DataFrame with columns [open, high, low, close, volume] indexed by timestamp.
+        """
+        if not self.is_connected():
+            self.connect()
+        try:
+            # import pandas lazily to avoid heavy import at module load
+            import pandas as pd  # type: ignore
+
+            contract = Stock(symbol, "SMART", "USD")
+            bars = self.ib.reqHistoricalData(
+                contract,
+                endDateTime="",
+                durationStr=duration,
+                barSizeSetting=bar_size,
+                whatToShow=what_to_show,
+                useRTH=use_rth,
+                formatDate=1,
+            )
+            rows = [
+                {
+                    "time": pd.to_datetime(getattr(b, "date", None)),
+                    "open": float(getattr(b, "open", 0.0)),
+                    "high": float(getattr(b, "high", 0.0)),
+                    "low": float(getattr(b, "low", 0.0)),
+                    "close": float(getattr(b, "close", 0.0)),
+                    "volume": int(getattr(b, "volume", 0) or 0),
+                }
+                for b in (bars or [])
+            ]
+            if not rows:
+                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])  # type: ignore[name-defined]
+            df = pd.DataFrame(rows)
+            if "time" in df.columns:
+                df = df.set_index("time")
+            return df
+        except Exception:
+            logger.exception("historical_prices failed for %s", symbol)
+            try:
+                import pandas as pd  # type: ignore
+
+                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])  # type: ignore[name-defined]
+            except Exception:
+                return []  # fallback for environments without pandas
+
     def disconnect(self) -> None:
         try:
             if self.ib and self.ib.isConnected():

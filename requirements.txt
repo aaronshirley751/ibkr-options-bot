@@ -1,5 +1,6 @@
 ib_insync
 pydantic>=2
+pydantic-settings>=2
 pandas
 numpy
 pandas-ta

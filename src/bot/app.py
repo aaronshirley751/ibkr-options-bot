@@ -1,28 +1,25 @@
 from loguru import logger
-import yaml
-from pathlib import Path
-
-
-def load_settings(path: str = "configs/settings.yaml") -> dict:
-    p = Path(path)
-    if not p.exists():
-        return {}
-    with open(p, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+from .settings import get_settings
 
 
 def main():
     logger.info("Starting ibkr-options-bot")
-    settings = load_settings()
+    settings = get_settings()
 
     # lazy import to avoid heavy deps at module import time
     from .broker.ibkr import IBKRBroker
     from .scheduler import run_scheduler
 
-    broker = IBKRBroker(host=settings.get("broker", {}).get("host"), port=settings.get("broker", {}).get("port"), client_id=settings.get("broker", {}).get("client_id"), paper=not settings.get("broker", {}).get("read_only", False))
+    broker = IBKRBroker(
+        host=settings.broker.host,
+        port=settings.broker.port,
+        client_id=settings.broker.client_id,
+        paper=not settings.broker.read_only,
+    )
 
     try:
-        run_scheduler(broker, settings)
+        # Pass dict-like view for now; scheduler will accept either object or dict
+        run_scheduler(broker, settings.model_dump())
     except KeyboardInterrupt:
         logger.info("Shutting down due to KeyboardInterrupt")
     finally:
