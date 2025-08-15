@@ -22,6 +22,22 @@ python -m pytest -q
 
 Files of interest: `src/bot/app.py`, `src/bot/broker/ibkr.py`, `configs/settings.yaml`.
 
+Pre-commit hooks
+-----------------
+
+Install tooling and enable hooks locally so formatting, linting, and typing run before each commit:
+
+```bash
+python -m pip install -r requirements-dev.txt
+pre-commit install
+```
+
+You can run the hooks against all files on demand:
+
+```bash
+pre-commit run --all-files
+```
+
 Raspberry Pi notes
 ------------------
 
