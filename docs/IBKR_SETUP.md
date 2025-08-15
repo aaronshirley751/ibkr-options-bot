@@ -81,3 +81,47 @@ Next steps
 
 - Once connectivity is verified, set `dry_run: false` only when you are confident in your configuration and have appropriate risk limits in `configs/settings.yaml`.
 - Review `README.md` and `ROADMAP.md` for deployment guidance and operational best practices.
+
+How to use (SSH into the Raspberry Pi)
+--------------------------------------
+
+1) SSH into your Pi from your dev machine:
+
+```bash
+ssh pi@<pi-host-or-ip>
+```
+
+2) Ensure Docker and Compose plugin are installed on the Pi. Then clone or sync this repo:
+
+```bash
+git clone https://github.com/aaronshirley751/ibkr-options-bot.git
+cd ibkr-options-bot
+```
+
+3) Create `.env` with your paper credentials and timezone:
+
+```bash
+cp .env.example .env
+vim .env  # set IBKR_USERNAME, IBKR_PASSWORD, TZ
+```
+
+4) Launch IB Gateway via Docker Compose overlay (paper mode):
+
+```bash
+docker compose -f docker-compose.gateway.yml up --build -d
+```
+
+5) From the same Pi session (or via a venv), run the connectivity test:
+
+```bash
+make venv
+make ibkr-test
+# Optional: test what-if bracket order
+TEST_SYMBOL=SPY ${MAKE} ibkr-test IBKR_HOST=127.0.0.1 IBKR_PORT=4002 IBKR_CLIENT_ID=101 -- --place-test-order
+```
+
+6) Review JSON-like output lines to confirm quotes, bars, and depth (if subscribed). Stop Gateway when done:
+
+```bash
+docker compose -f docker-compose.gateway.yml down
+```

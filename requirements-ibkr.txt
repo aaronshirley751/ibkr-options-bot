@@ -1,0 +1,2 @@
+# Optional dependency set for IBKR connectivity testing
+ib-insync>=0.9
