@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  bot:
+    build: .
+    image: ibkr-options-bot:latest
+    container_name: ibkr-options-bot
+    env_file:
+      - .env
+    environment:
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+    restart: unless-stopped

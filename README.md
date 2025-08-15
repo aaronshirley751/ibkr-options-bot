@@ -183,3 +183,31 @@ If you prefer HTTPS:
 git remote add origin https://github.com/<owner>/<repo>.git
 git push -u origin main
 ```
+
+Docker usage
+------------
+
+Build the image and run the bot (expects `.env` and `configs/settings.yaml` locally):
+
+```bash
+docker build -t ibkr-options-bot:latest .
+docker run --rm \
+	--env-file .env \
+	-e TZ=${TZ:-America/New_York} \
+	-v "$PWD/configs:/app/configs:ro" \
+	-v "$PWD/logs:/app/logs" \
+	ibkr-options-bot:latest
+```
+
+Compose: bot only
+
+```bash
+docker compose up --build bot
+```
+
+Compose overlay with IBKR Gateway (paper)
+
+```bash
+# Ensure IBKR_USERNAME/IBKR_PASSWORD exist in .env
+docker compose -f docker-compose.yml -f docker-compose.gateway.yml up --build
+```
