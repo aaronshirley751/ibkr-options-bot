@@ -9,6 +9,7 @@ symbols:
   - "QQQ"
 
 mode: "growth"  # growth | hybrid
+dry_run: false
 
 schedule:
   interval_seconds: 180
