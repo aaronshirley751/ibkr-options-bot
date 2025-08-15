@@ -11,8 +11,17 @@ venv:
 	. ${VENV}/bin/activate && ${PIP} install -r requirements-dev.txt
 
 fmt:
-	. ${VENV}/bin/activate && ${VENV}/bin/black src tests
-	. ${VENV}/bin/activate && ${VENV}/bin/ruff check --fix src tests
+	@if [ -x "${VENV}/bin/black" ]; then \
+		${VENV}/bin/black src tests; \
+		${VENV}/bin/ruff check --fix src tests; \
+	else \
+		black src tests; \
+		ruff check --fix src tests; \
+	fi
 
 test:
-	. ${VENV}/bin/activate && ${VENV}/bin/pytest -q
+	@if [ -x "${VENV}/bin/pytest" ]; then \
+		${VENV}/bin/pytest -q; \
+	else \
+		pytest -q; \
+	fi
