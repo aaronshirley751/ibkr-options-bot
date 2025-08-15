@@ -5,7 +5,7 @@ from loguru import logger
 from .risk import stop_target_from_premium
 
 
-def build_bracket(option_premium: float, take_profit_pct: Optional[float], stop_loss_pct: Optional[float]) -> Dict[str, float]:
+def build_bracket(option_premium: float, take_profit_pct: Optional[float], stop_loss_pct: Optional[float]) -> Dict[str, Optional[float]]:
     """Return limit and stop prices for an option given premium and pct targets."""
     tp = None
     sl = None
@@ -35,7 +35,20 @@ def is_liquid(quote: Any, max_spread_pct: float, min_volume: int) -> bool:
     return True
 
 
-def emulate_oco(broker, contract, parent_order_id: str, take_profit: Optional[float], stop_loss: Optional[float], poll_seconds: int = 5):
+def _closing_action(original_action: str) -> str:
+    return "SELL" if original_action.upper() == "BUY" else "BUY"
+
+
+def emulate_oco(
+    broker,
+    contract: Any,
+    parent_order_id: str,
+    take_profit: Optional[float],
+    stop_loss: Optional[float],
+    poll_seconds: int = 5,
+    side: str = "BUY",
+    quantity: Optional[int] = None,
+):
     """Emulate OCO by polling last price and cancelling the opposite order when one triggers.
 
     This function blocks and should be run in a dedicated thread or coroutine in production.
@@ -51,13 +64,41 @@ def emulate_oco(broker, contract, parent_order_id: str, take_profit: Optional[fl
             if take_profit and last >= take_profit:
                 tp_triggered = True
                 logger.info("TP triggered at %s", last)
-                # place closing order here
-                # broker.place_order closing logic omitted for brevity
+                # place closing order (limit at TP)
+                from .broker.base import OrderTicket
+
+                ticket = OrderTicket(
+                    contract=contract,
+                    action=_closing_action(side),
+                    quantity=quantity or 1,
+                    order_type="LMT",
+                    limit_price=take_profit,
+                    transmit=True,
+                )
+                try:
+                    oid = broker.place_order(ticket)
+                    logger.info("Submitted TP close order %s", oid)
+                except Exception:
+                    logger.exception("Failed to submit TP close order")
+                # attempt to cancel opposite child if any API state is available
                 break
             if stop_loss and last <= stop_loss:
                 sl_triggered = True
                 logger.info("SL triggered at %s", last)
-                # place closing order here
+                from .broker.base import OrderTicket
+
+                ticket = OrderTicket(
+                    contract=contract,
+                    action=_closing_action(side),
+                    quantity=quantity or 1,
+                    order_type="MKT",
+                    transmit=True,
+                )
+                try:
+                    oid = broker.place_order(ticket)
+                    logger.info("Submitted SL market close order %s", oid)
+                except Exception:
+                    logger.exception("Failed to submit SL close order")
                 break
             time.sleep(poll_seconds)
     except KeyboardInterrupt:
