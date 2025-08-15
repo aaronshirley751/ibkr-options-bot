@@ -52,6 +52,8 @@ def main() -> int:
 	ap.add_argument("--client-id", type=int, default=101)
 	ap.add_argument("--symbol", default="SPY", help="Stock symbol to test")
 	ap.add_argument("--timeout", type=float, default=3.0)
+	ap.add_argument("--place-test-order", action="store_true", help="Attempt a paper what-if bracket order")
+	ap.add_argument("--test-qty", type=int, default=1, help="Test order quantity")
 	args = ap.parse_args()
 
 	# Import ib_insync lazily to avoid hard dependency at import time
@@ -113,6 +115,41 @@ def main() -> int:
 			ib.cancelMktDepth(stock)
 		except Exception:
 			print({"event": "depth", "ok": False, "reason": "not_available"})
+
+		# Optional: attempt a safe what-if bracket order (no fill)
+		if args.place_test_order:
+			try:
+				from ib_insync import MarketOrder, LimitOrder, StopOrder  # type: ignore
+
+				# Use last price if available to derive TP/SL; whatIf avoids execution
+				last_px = snap.last if snap else 0.0
+				if not last_px:
+					last_px = 100.0
+
+				parent = MarketOrder("BUY", args.test_qty)
+				parent.transmit = False
+				parent.whatIf = True
+
+				# +2% TP, -1% SL
+				tp_price = round(last_px * 1.02, 2)
+				sl_price = round(last_px * 0.99, 2)
+				tp = LimitOrder("SELL", args.test_qty, tp_price)
+				sl = StopOrder("SELL", args.test_qty, sl_price)
+				tp.whatIf = True
+				sl.whatIf = True
+
+				trade = ib.placeOrder(stock, parent)
+				parent_id = getattr(trade.order, "orderId", None)
+				if parent_id is not None:
+					tp.parentId = parent_id
+					sl.parentId = parent_id
+					tp.transmit = False
+					sl.transmit = True  # final child transmits group
+					ib.placeOrder(stock, tp)
+					ib.placeOrder(stock, sl)
+				print({"event": "whatif_bracket", "ok": True, "parent_id": parent_id, "tp": tp_price, "sl": sl_price})
+			except Exception as e:  # pragma: no cover
+				print({"event": "whatif_bracket", "ok": False, "error": str(e)})
 	finally:
 		try:
 			ib.disconnect()
