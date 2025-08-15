@@ -1,6 +1,6 @@
 import time
-from datetime import datetime, time as dtime
-from typing import Callable, Dict, Any
+from datetime import datetime, time as dtime, date as ddate
+from typing import Callable, Dict, Any, Optional
 from zoneinfo import ZoneInfo
 import traceback
 import pandas as pd
@@ -12,6 +12,7 @@ from .risk import position_size, should_stop_trading_today
 from .execution import build_bracket, emulate_oco, is_liquid
 from .journal import log_trade
 from .data.options import pick_weekly_option
+from .monitoring import send_heartbeat, alert_all
 
 
 # Runs a job every `interval_seconds` during regular trading hours (09:30-16:00 ET)
@@ -43,6 +44,9 @@ def _to_df(bars_iter) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+_LOSS_ALERTED_DATE: Dict[str, Optional[ddate]] = {"date": None}
+
+
 def run_cycle(broker, settings: Dict[str, Any]):
     """One scheduler cycle: fetch bars, compute signals, and optionally submit orders."""
     symbols = settings.get("symbols", [])
@@ -52,6 +56,11 @@ def run_cycle(broker, settings: Dict[str, Any]):
             loss_guard = should_stop_trading_today(broker, settings.get("risk", {}).get("max_daily_loss_pct", 0.15))
             if loss_guard:
                 logger.warning("Daily loss guard active; skipping new positions")
+                # Alert once per trading day
+                ny = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/New_York"))
+                if _LOSS_ALERTED_DATE["date"] != ny.date():
+                    alert_all(settings, f"Daily loss limit breached. Pausing new entries for {ny.date()}.")
+                    _LOSS_ALERTED_DATE["date"] = ny.date()
                 return
             # fetch recent 1-min bars; try multiple broker methods
             bars = None
@@ -174,7 +183,12 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 log_trade(trade)
 
         except Exception:
-            logger.error("Error during run_cycle for %s:\n%s", symbol, traceback.format_exc())
+            err = traceback.format_exc()
+            logger.error("Error during run_cycle for %s:\n%s", symbol, err)
+            try:
+                alert_all(settings, f"run_cycle error for {symbol}: see logs for details.")
+            except Exception:
+                pass
 
 
 def run_scheduler(broker, settings: Dict[str, Any]):
@@ -184,6 +198,9 @@ def run_scheduler(broker, settings: Dict[str, Any]):
         now = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
         if is_rth(now):
             try:
+                # Heartbeat at start of each active cycle
+                hb = settings.get("monitoring", {}).get("heartbeat_url")
+                send_heartbeat(hb)
                 run_cycle(broker, settings)
             except Exception:
                 logger.exception("Scheduler cycle failed")
@@ -192,5 +209,7 @@ def run_scheduler(broker, settings: Dict[str, Any]):
             # if we just ended a trading day, emit a simple summary placeholder
             if last_day is not None and now.date() != last_day:
                 logger.bind(event="eod_summary").info("End of day summary emitted (stub)")
+                # Reset daily loss alert flag for the new day
+                _LOSS_ALERTED_DATE["date"] = None
                 last_day = None
         time.sleep(interval_seconds)

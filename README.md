@@ -59,6 +59,13 @@ Environment variables
 - `IBKR_PORT` – port (paper default 4002)
 - `IBKR_CLIENT_ID` – int client id for IB API
 
+Monitoring & alerts
+-------------------
+
+- Heartbeat: set `monitoring.heartbeat_url` (e.g., Healthchecks.io) to ping at the start of each active cycle.
+- Alerts: enable `monitoring.alerts_enabled` and optionally set `slack_webhook_url` and/or Telegram `telegram_bot_token` + `telegram_chat_id`.
+- The bot sends an alert once per day when the daily loss guard triggers, and on unexpected run_cycle errors.
+
 Market data requirements
 ------------------------
 
@@ -146,6 +153,9 @@ Known gaps and items to strengthen
 6) CI/CD
 	- Add GitHub Actions: ruff, black --check, mypy, pytest.
 	- Add pre‑commit hooks to enforce formatting/linting locally.
+
+7) Monitoring
+	- Add retries/backoff for webhooks, redact secrets in logs, and consider Sentry for exception tracking.
 
 
 Prioritized next steps (suggested)

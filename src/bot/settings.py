@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -42,6 +42,14 @@ class OptionsSettings(BaseModel):
         return v
 
 
+class MonitoringSettings(BaseModel):
+    alerts_enabled: bool = Field(default=True)
+    heartbeat_url: Optional[str] = Field(default=None)
+    slack_webhook_url: Optional[str] = Field(default=None)
+    telegram_bot_token: Optional[str] = Field(default=None)
+    telegram_chat_id: Optional[str] = Field(default=None)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", env_nested_delimiter="__", extra="ignore")
 
@@ -54,6 +62,7 @@ class Settings(BaseSettings):
     risk: RiskSettings = RiskSettings()
     schedule: ScheduleSettings = ScheduleSettings()
     options: OptionsSettings = OptionsSettings()
+    monitoring: MonitoringSettings = MonitoringSettings()
 
     @field_validator("mode")
     @classmethod
