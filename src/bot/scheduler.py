@@ -8,7 +8,7 @@ from loguru import logger
 
 from .strategy.scalp_rules import scalp_signal
 from .strategy.whale_rules import whale_rules
-from .risk import position_size
+from .risk import position_size, should_stop_trading_today
 from .execution import build_bracket, emulate_oco, is_liquid
 from .journal import log_trade
 from .data.options import pick_weekly_option
@@ -48,6 +48,11 @@ def run_cycle(broker, settings: Dict[str, Any]):
     symbols = settings.get("symbols", [])
     for symbol in symbols:
         try:
+            # Check daily loss guard once per cycle; if triggered, skip new entries
+            loss_guard = should_stop_trading_today(broker, settings.get("risk", {}).get("max_daily_loss_pct", 0.15))
+            if loss_guard:
+                logger.warning("Daily loss guard active; skipping new positions")
+                return
             # fetch recent 1-min bars; try multiple broker methods
             bars = None
             if hasattr(broker, "historical_prices"):

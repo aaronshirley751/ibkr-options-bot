@@ -1,5 +1,8 @@
 from math import floor
-from typing import Tuple
+from typing import Tuple, Optional
+from pathlib import Path
+import json
+from datetime import datetime, timezone
 
 
 def position_size(equity: float, max_risk_pct: float, stop_loss_pct: float, option_premium: float) -> int:
@@ -32,3 +35,59 @@ def stop_target_from_premium(premium: float, stop_pct: float, target_pct: float)
     stop = premium * (1 - stop_pct)
     target = premium * (1 + target_pct)
     return stop, target
+
+
+# --- Daily loss guard persistence ---
+
+DEFAULT_STATE_PATH = Path("logs/daily_state.json")
+
+
+def _today_key() -> str:
+    return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
+
+
+def load_equity_state(path: Path = DEFAULT_STATE_PATH) -> dict:
+    try:
+        if not path.exists():
+            return {}
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_equity_state(state: dict, path: Path = DEFAULT_STATE_PATH) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(state, f)
+    tmp.replace(path)
+
+
+def get_start_of_day_equity(broker, path: Path = DEFAULT_STATE_PATH) -> Optional[float]:
+    """Load or initialize start-of-day equity from persistent storage.
+
+    If today is not present, record current equity as start-of-day.
+    """
+    state = load_equity_state(path)
+    key = _today_key()
+    if key in state and isinstance(state[key], (int, float)):
+        return float(state[key])
+    # initialize
+    try:
+        cur = float(broker.pnl().get("net", 0.0))
+    except Exception:
+        cur = 0.0
+    state[key] = cur
+    save_equity_state(state, path)
+    return cur
+
+
+def should_stop_trading_today(broker, max_daily_loss_pct: float, path: Path = DEFAULT_STATE_PATH) -> bool:
+    """Return True if daily loss exceeds threshold, based on persisted start-of-day equity."""
+    sod = get_start_of_day_equity(broker, path)
+    try:
+        now = float(broker.pnl().get("net", 0.0))
+    except Exception:
+        now = 0.0
+    return guard_daily_loss(sod or 0.0, now, max_daily_loss_pct)
