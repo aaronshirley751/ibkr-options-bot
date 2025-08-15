@@ -4,3 +4,4 @@ ruff
 pytest
 mypy
 types-PyYAML
+pre-commit

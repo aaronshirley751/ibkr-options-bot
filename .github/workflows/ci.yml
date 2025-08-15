@@ -44,6 +44,10 @@ jobs:
         run: |
           pytest -q
 
+      - name: Run pre-commit on all files
+        run: |
+          pre-commit run --all-files --show-diff-on-failure
+
   build-docker:
     name: Build Docker image
     needs: lint-and-test
