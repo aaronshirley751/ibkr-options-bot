@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+  gateway:
+    image: ghcr.io/gyrasol/ibkr-gateway:latest
+    container_name: ibkr-gateway
+    environment:
+      - TWSUSER=${IBKR_USERNAME}
+      - TWSPASSWORD=${IBKR_PASSWORD}
+      - PAPER=true
+      - FIX=false
+      - VNC=false
+      - TRADING_MODE=paper
+      - TWS_MAJOR_VRSN=1015
+    ports:
+      - "4002:4002" # IBKR paper API port
+    restart: unless-stopped
+
+  bot:
+    depends_on:
+      - gateway
+    environment:
+      - IBKR_HOST=gateway
+      - IBKR_PORT=4002
