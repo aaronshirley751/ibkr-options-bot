@@ -11,13 +11,8 @@ services:
       - VNC=false
       - TRADING_MODE=paper
       - TWS_MAJOR_VRSN=1015
+  - TZ=${TZ:-UTC}
     ports:
       - "4002:4002" # IBKR paper API port
     restart: unless-stopped
-
-  bot:
-    depends_on:
-      - gateway
-    environment:
-      - IBKR_HOST=gateway
-      - IBKR_PORT=4002
+    
