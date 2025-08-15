@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 services:
   gateway:
     image: ghcr.io/gyrasol/ibkr-gateway:latest
@@ -11,8 +11,8 @@ services:
       - VNC=false
       - TRADING_MODE=paper
       - TWS_MAJOR_VRSN=1015
-  - TZ=${TZ:-UTC}
+      - TZ=${TZ:-UTC}
     ports:
-      - "4002:4002" # IBKR paper API port
+      - "4002:4002"
     restart: unless-stopped
     
