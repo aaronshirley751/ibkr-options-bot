@@ -1,6 +1,8 @@
 import time
 from datetime import datetime, time as dtime, date as ddate
 from typing import Callable, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 from zoneinfo import ZoneInfo
 import traceback
 import pandas as pd
@@ -50,7 +52,21 @@ _LOSS_ALERTED_DATE: Dict[str, Optional[ddate]] = {"date": None}
 def run_cycle(broker, settings: Dict[str, Any]):
     """One scheduler cycle: fetch bars, compute signals, and optionally submit orders."""
     symbols = settings.get("symbols", [])
-    for symbol in symbols:
+
+    # Ensure broker access is serialized unless the implementation is known to be thread-safe
+    broker_lock = getattr(broker, "_thread_lock", None)
+    if broker_lock is None:
+        broker_lock = Lock()
+        try:
+            setattr(broker, "_thread_lock", broker_lock)
+        except Exception:
+            pass
+
+    def _with_broker_lock(fn, *args, **kwargs):
+        with broker_lock:
+            return fn(*args, **kwargs)
+
+    def process_symbol(symbol: str):
         try:
             # Check daily loss guard once per cycle; if triggered, skip new entries
             loss_guard = should_stop_trading_today(broker, settings.get("risk", {}).get("max_daily_loss_pct", 0.15))
@@ -65,11 +81,11 @@ def run_cycle(broker, settings: Dict[str, Any]):
             # fetch recent 1-min bars; try multiple broker methods
             bars = None
             if hasattr(broker, "historical_prices"):
-                bars = broker.historical_prices(symbol)
+                bars = _with_broker_lock(broker.historical_prices, symbol)
             elif hasattr(broker, "market_data"):
                 # market_data may return historical bars or a snapshot Quote
                 try:
-                    bars = broker.market_data(symbol)
+                    bars = _with_broker_lock(broker.market_data, symbol)
                 except Exception:
                     bars = None
 
@@ -78,7 +94,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 logger.bind(event="insufficient_bars", symbol=symbol, bars=len(df1)).info(
                     "Skipping: insufficient bars"
                 )
-                continue
+                return
 
             # compute scalp signal on 1-min bars
             scalp = scalp_signal(df1)
@@ -105,7 +121,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
             if action in ("BUY", "SELL", "BUY_CALL", "BUY_PUT"):
                 # pick option using refined selection
                 direction = "C" if action.startswith("BUY") else "P"
-                last_under_q = broker.market_data(symbol)
+                last_under_q = _with_broker_lock(broker.market_data, symbol)
                 last_under = getattr(last_under_q, "last", 0.0)
                 cfg_opts = settings.get("options", {})
                 opt = pick_weekly_option(
@@ -121,24 +137,24 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     logger.bind(event="skip", symbol=symbol, reason="no_viable_option").info(
                         "Skipping: no viable option"
                     )
-                    continue
+                    return
 
                 # get option premium
                 q = None
                 try:
-                    q = broker.market_data(getattr(opt, "symbol", opt))
+                    q = _with_broker_lock(broker.market_data, getattr(opt, "symbol", opt))
                     premium = getattr(q, "last", 0.0)
                 except Exception:
                     premium = 0.0
 
                 cfg_risk = settings.get("risk", {})
-                equity = broker.pnl().get("net", 100000.0)
+                equity = _with_broker_lock(broker.pnl).get("net", 100000.0)
                 size = position_size(equity, cfg_risk.get("max_risk_pct_per_trade", 0.01), cfg_risk.get("stop_loss_pct", 0.2), premium or 0.0)
                 if size <= 0:
                     logger.bind(event="skip", symbol=symbol, reason="size_zero").info(
                         "Skipping: size zero"
                     )
-                    continue
+                    return
 
                 # check liquidity
                 # Re-check liquidity guard with same thresholds
@@ -146,7 +162,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     logger.bind(event="skip", symbol=symbol, reason="illiquid").info(
                         "Skipping: illiquid contract"
                     )
-                    continue
+                    return
 
                 # build bracket
                 bracket = build_bracket(premium, cfg_risk.get("take_profit_pct"), cfg_risk.get("stop_loss_pct"))
@@ -155,7 +171,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 from .broker.base import OrderTicket
 
                 ticket = OrderTicket(contract=opt, action=("BUY" if action.startswith("BUY") else "SELL"), quantity=size, order_type="MKT", take_profit_pct=cfg_risk.get("take_profit_pct"), stop_loss_pct=cfg_risk.get("stop_loss_pct"))
-                order_id = broker.place_order(ticket)
+                order_id = _with_broker_lock(broker.place_order, ticket)
 
                 # if broker doesn't support native OCO, emulate
                 # run emulate_oco in background thread
@@ -189,6 +205,13 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 alert_all(settings, f"run_cycle error for {symbol}: see logs for details.")
             except Exception:
                 pass
+
+    # concurrency: process symbols in a limited thread pool
+    max_workers = int(settings.get("schedule", {}).get("max_concurrent_symbols", 2) or 1)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(process_symbol, sym): sym for sym in symbols}
+        for _ in as_completed(futures):
+            pass
 
 
 def run_scheduler(broker, settings: Dict[str, Any]):

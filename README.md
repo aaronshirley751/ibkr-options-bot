@@ -221,3 +221,10 @@ Compose overlay with IBKR Gateway (paper)
 # Ensure IBKR_USERNAME/IBKR_PASSWORD exist in .env
 docker compose -f docker-compose.yml -f docker-compose.gateway.yml up --build
 ```
+
+Parallelism & scalability
+-------------------------
+
+- The scheduler can process multiple symbols concurrently using threads. Control via `schedule.max_concurrent_symbols` (default 2).
+- Broker calls are serialized through an internal lock to avoid thread-safety issues in client libraries; adjust if your broker impl is thread-safe.
+- Journal writes are protected with a file lock to avoid corruption.

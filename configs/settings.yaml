@@ -12,6 +12,7 @@ mode: "growth"  # growth | hybrid
 
 schedule:
   interval_seconds: 180
+  max_concurrent_symbols: 2
 
 risk:
   max_risk_pct_per_trade: 0.10

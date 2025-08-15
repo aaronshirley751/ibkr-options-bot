@@ -25,6 +25,7 @@ class RiskSettings(BaseModel):
 
 class ScheduleSettings(BaseModel):
     interval_seconds: int = Field(default=180, ge=10, le=3600)
+    max_concurrent_symbols: int = Field(default=2, ge=1, le=32)
 
 
 class OptionsSettings(BaseModel):
