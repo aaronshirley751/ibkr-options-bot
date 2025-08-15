@@ -135,6 +135,62 @@ Current status (summary)
 - README includes Raspberry Pi notes, IB Gateway setup, env vars, and disclaimers.
 
 
+Progress update (2025-08-15)
+----------------------------
+
+What’s done
+- Added optional IBKR deps file `requirements-ibkr.txt` and Make targets: `ibkr-deps`, `ibkr-test`, `ibkr-test-whatif`, and gateway helpers `gateway-up/down/logs`.
+- Implemented `test_ibkr_connection.py` to validate Gateway connectivity (stock/forex/options snapshots, historical bars, optional what-if bracket).
+- Created `docs/IBKR_SETUP.md` with Raspberry Pi SSH workflow and Docker Compose overlay usage.
+- Fixed and simplified `docker-compose.gateway.yml` to be a standalone Gateway overlay.
+- Structured logging, tests, CI, Dockerfile, and roadmap are in place from earlier milestones.
+
+Lessons learned
+- Raspberry Pi had legacy apt sources (mopidy) causing `apt-get update` failures—removed stale entries before installing packages.
+- GHCR image `ghcr.io/gyrasol/ibkr-gateway:latest` requires authentication; pulling anonymously on the Pi returned `denied`.
+- The Pi environment reported Python 3.7 by default; the project targets Python 3.11+. A newer OS image (Bullseye/Bookworm 64-bit) or Python 3.11 via pyenv is advised for parity and long-term support.
+
+Blockers / decisions
+- Gateway container image: choose between
+	1) Authenticate to GHCR (create a GitHub PAT with read:packages and `docker login ghcr.io` on the Pi), or
+	2) Switch to a public IB Gateway image (no auth), updating `docker-compose.gateway.yml` accordingly.
+- Pi Python version: optional for the connectivity test (works with ib_insync on 3.7), but upgrade to Python 3.11+ is recommended for the bot runtime.
+
+Start here: Next steps (Gateway + connectivity)
+-----------------------------------------------
+
+1) Decide Gateway image path
+- Preferred (secure): authenticate and keep `ghcr.io/gyrasol/ibkr-gateway:latest`.
+	- On the Pi: `docker login ghcr.io -u <github-username>` (password = GitHub PAT with read:packages)
+- Alternate: switch to a public image in `docker-compose.gateway.yml` and run without login.
+
+2) Ensure `.env` has credentials for paper Gateway
+- `IBKR_USERNAME=...` and `IBKR_PASSWORD=...`
+- `TZ=America/New_York` (or your timezone)
+
+3) Bring up Gateway on the Pi
+```bash
+make gateway-up
+docker ps --filter name=ibkr-gateway --format '{{.Names}} | {{.Status}}'
+```
+
+4) Run connectivity test (on the Pi)
+```bash
+make venv
+make ibkr-deps
+make ibkr-test
+# Optional safe what-if bracket order
+make ibkr-test-whatif
+```
+
+5) When done
+```bash
+make gateway-down
+```
+
+Operational tip: keep `dry_run: true` in `configs/settings.yaml` until you fully validate data, sizing, and bracket behavior.
+
+
 Known gaps and items to strengthen
 ----------------------------------
 
