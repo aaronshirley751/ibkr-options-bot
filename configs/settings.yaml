@@ -29,3 +29,10 @@ options:
 journal:
   path_csv: "logs/trades.csv"
   path_jsonl: "logs/trades.jsonl"
+
+monitoring:
+  alerts_enabled: true
+  heartbeat_url: ""      # e.g., https://hc-ping.com/<uuid>
+  slack_webhook_url: ""  # optional: Slack Incoming Webhook URL
+  telegram_bot_token: "" # optional: Telegram bot token
+  telegram_chat_id: ""   # optional: Telegram chat id
