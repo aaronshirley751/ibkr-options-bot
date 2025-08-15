@@ -21,6 +21,7 @@ python -m pytest -q
 ```
 
 Files of interest: `src/bot/app.py`, `src/bot/broker/ibkr.py`, `configs/settings.yaml`.
+See also: `ROADMAP.md` for phased deployment guidance.
 
 Pre-commit hooks
 -----------------
