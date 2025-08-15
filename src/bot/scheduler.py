@@ -132,7 +132,20 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 import threading
 
                 if bracket.get("take_profit") or bracket.get("stop_loss"):
-                    t = threading.Thread(target=emulate_oco, args=(broker, opt, order_id, bracket.get("take_profit"), bracket.get("stop_loss"), settings.get("schedule", {}).get("interval_seconds", 180)), daemon=True)
+                    t = threading.Thread(
+                        target=emulate_oco,
+                        args=(
+                            broker,
+                            opt,
+                            order_id,
+                            bracket.get("take_profit"),
+                            bracket.get("stop_loss"),
+                            settings.get("schedule", {}).get("interval_seconds", 180),
+                            ticket.action,
+                            ticket.quantity,
+                        ),
+                        daemon=True,
+                    )
                     t.start()
 
                 # log trade
