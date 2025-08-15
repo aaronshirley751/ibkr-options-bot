@@ -28,9 +28,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Enforce formatting (Black + Ruff fix)
+      - name: Check formatting (Black --check)
         run: |
-          make fmt
+          black --check src tests
 
       - name: Lint (Ruff)
         run: |
@@ -44,9 +44,6 @@ jobs:
         run: |
           pytest -q
 
-      - name: Run pre-commit on all files
-        run: |
-          pre-commit run --all-files --show-diff-on-failure
 
   build-docker:
     name: Build Docker image
