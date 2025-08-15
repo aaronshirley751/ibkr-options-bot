@@ -32,7 +32,12 @@ def _to_df(bars_iter) -> pd.DataFrame:
             return df
         # ensure columns
         cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
-        return df[cols].copy()
+        if not cols:
+            return pd.DataFrame()
+        # Always produce a DataFrame even if a single column
+        subset = df.loc[:, cols if len(cols) > 1 else [cols[0]]]
+        subset_df = pd.DataFrame(subset)
+        return subset_df.copy()
     except Exception:
         return pd.DataFrame()
 
@@ -85,6 +90,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 opt = next((c for c in contracts if c.right == direction), contracts[0])
 
                 # get option premium
+                q = None
                 try:
                     q = broker.market_data(opt.symbol if hasattr(opt, "symbol") else opt)
                     premium = getattr(q, "last", 0.0)
@@ -100,7 +106,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
                 # check liquidity
                 cfg_opts = settings.get("options", {})
-                if not is_liquid(q, cfg_opts.get("max_spread_pct", 2.0), cfg_opts.get("min_volume", 100)):
+                if q is None or not is_liquid(q, cfg_opts.get("max_spread_pct", 2.0), cfg_opts.get("min_volume", 100)):
                     logger.info("Option contract illiquid for %s, skipping", symbol)
                     continue
 
