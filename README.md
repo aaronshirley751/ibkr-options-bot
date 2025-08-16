@@ -26,10 +26,28 @@ See also: `ROADMAP.md` for phased deployment guidance.
 Start Here Next Session
 -----------------------
 
-- Choose IBKR Gateway image path (GHCR auth vs. public image) and bring the Gateway up on the Pi.
-- On the Pi: run the connectivity test make targets (paper mode) once the Gateway is up.
-- On this Windows machine: install Python 3.11+, then create a venv and run tests locally.
-- Follow-ups: wire CI, implement missing broker data paths, and expand unit tests with a FakeBroker.
+**PRIORITY 1: Gateway Resolution**
+- Pi environment is ready but Gateway deployment is blocked
+- Need to resolve Docker image access issue by choosing one path:
+  1. GHCR Authentication: Create GitHub PAT → `docker login ghcr.io` on Pi
+  2. Alternative: Find working public IB Gateway image or manual installation
+  3. Fallback: Install IB Gateway directly without Docker
+
+**PRIORITY 2: End-to-End Testing**
+- Once Gateway is running on Pi: `make ibkr-test` for connectivity validation
+- Test environment is fully prepared with ib_insync and credentials configured
+
+**PRIORITY 3: Local Development**
+- Install Python 3.11+ on Windows machine
+- Create venv and run tests locally to validate code changes before Pi deployment
+
+**Status Summary:**
+- ✅ Pi SSH access configured and working
+- ✅ Repository synchronized with latest changes
+- ✅ Python environment and dependencies installed on Pi
+- ✅ IBKR credentials configured
+- ❌ Gateway deployment blocked by image access issues
+- ❌ Local Python environment missing on Windows
 
 Pre-commit hooks
 -----------------
@@ -312,12 +330,50 @@ What’s done
 - Hardened `src/bot/scheduler.py` against missing pandas: added guards to only use DataFrame operations when available.
 - Cleaned indentation and stabilized formatting issues that previously tripped static checks.
 
+Pi Setup Progress (2025-08-16 afternoon)
+- SSH connection established to Pi (192.168.7.117)
+- Repository updated to latest version with all recent changes
+- Python 3.7.3 confirmed available (older than target 3.11+ but sufficient for ib_insync)
+- Virtual environment exists and has key packages: ib-insync 0.9.86, pandas 1.3.5
+- Environment file (.env) configured with IBKR paper credentials
+- Docker 24.0.1 available and ready
+
+Gateway Image Challenges
+- Original GHCR image (ghcr.io/gyrasol/ibkr-gateway:latest) requires authentication - access denied
+- Attempted multiple public alternatives:
+  - voyz/ib-gateway:paper - repository does not exist
+  - rylorin/ib-gateway:latest - access denied
+  - ibcontroller/ib-gateway:latest - access denied
+- All public IB Gateway images tested returned "pull access denied" or "repository does not exist"
+- Current blocker: Need to find a working public IB Gateway image or set up GHCR authentication
+
+Connectivity Test Results
+- test_ibkr_connection.py runs successfully but fails at connection step (expected - no Gateway running)
+- Error: ConnectionRefusedError on port 4002 (confirms no Gateway is listening)
+- All prerequisites for connectivity testing are in place once Gateway is resolved
+
 Notes
 - Local Windows shell currently lacks Python (venv creation failed). Tests will pass once Python 3.11+ is installed.
-- Pi side remains the target for IBKR end-to-end checks; ensure the Gateway image decision (GHCR vs. public) is finalized.
+- Pi environment is fully prepared for IBKR testing - only Gateway deployment remains as blocker.
+
+**Gateway Resolution Options (2025-08-16)**
+1. **GHCR Authentication** (Recommended for security):
+   ```bash
+   # Create GitHub Personal Access Token with read:packages scope
+   # On Pi: docker login ghcr.io -u <github-username>
+   # Password: use the PAT token
+   # Then: make gateway-up
+   ```
+
+2. **Public Image Search**: Continue searching for working public IB Gateway alternatives
+
+3. **Manual Gateway Installation**: Download IB Gateway directly from IBKR and run without Docker
 
 Start here: bite-size next steps
-1) Pi/Gateway: authenticate to GHCR and keep the current image, or swap to a public Gateway image in `docker-compose.gateway.yml` and start it.
-2) Connectivity: run `make venv && make ibkr-deps && make ibkr-test` on the Pi; optionally `make ibkr-test-whatif`.
-3) Local dev: install Python 3.11+, set up venv, `pip install -r requirements.txt -r requirements-dev.txt`, then run `pytest -q`.
-4) CI: add GitHub Actions for ruff/black/mypy/pytest when local runs are green.
+1) **Gateway Resolution (Critical)**: Choose one of these paths:
+   - Create GitHub Personal Access Token with read:packages scope and authenticate: `docker login ghcr.io -u <username>`
+   - Find a working public IB Gateway image or build one from IBKR's official installer
+   - Set up IB Gateway manually without Docker (download and install directly)
+2) **Once Gateway is running**: Execute `make ibkr-test` on Pi for end-to-end validation
+3) **Local dev**: Install Python 3.11+, set up venv, and run tests locally
+4) **CI**: Add GitHub Actions workflow once local testing is validated
