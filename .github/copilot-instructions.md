@@ -1,7 +1,5 @@
 # GitHub Copilot Instructions
 
-This is an IBKR options trading bot built with Python 3.11+ featuring concurrent symbol processing, unified Pydantic configuration, and comprehensive monitoring.
-
 ## Architecture Overview
 
 **Core Components:**
@@ -81,3 +79,53 @@ docker compose -f docker-compose.yml -f docker-compose.gateway.yml up --build  #
 - **Option Selection:** Weekly expiry, ATM/±1 moneyness, with volume/spread filters
 - **Risk Guards:** Daily loss check gates all new positions; persisted to disk for restart survival
 - **OCO Emulation:** Background threads monitor fills and place TP/SL orders when native brackets unavailable
+
+
+Per session primer:
+
+You are acting as a senior Python developer experienced in Interactive Brokers API (IB API & Client Portal API), 
+building a modular, production-ready trading bot for my Raspberry Pi environment that will later scale to 
+a Dell PowerEdge R620 and then a GPU-capable 2U server.
+
+Your role:
+- Write clean, PEP8-compliant Python code
+- Include docstrings for all public classes and functions
+- Avoid placeholders — return fully functional code
+- Ensure all files run without syntax or import errors
+- Use relative imports for intra-project modules
+- Include example usage when helpful
+
+Project requirements:
+1. Must integrate with IBKR API for:
+   - Stocks
+   - Options (Level 2)
+   - Forex
+   - Forecast/Event contracts
+2. Modular structure:
+   - `ibkr_broker.py` → connection, authentication, order placement
+   - `strategy/` → scalping, options selection, and risk rules
+   - `data/` → market data fetching, historical data retrieval
+   - `utils/` → logging, config loader, error handling
+3. Configuration:
+   - Use `.env` for secrets (no hardcoding API keys)
+   - Use `pydantic` Settings class to unify config from `.env` + YAML
+4. Safety:
+   - Implement stop-loss, take-profit, and daily loss guard logic
+   - Include retry logic for failed orders
+5. Logging:
+   - Structured JSON logs with timestamps, symbol, action, and reason
+6. Testing:
+   - Include pytest unit tests for all major modules
+
+Deliverables:
+- Provide complete file content when creating new modules
+- If updating code, return the full updated file, not just the diff
+- Maintain a consistent import and naming convention
+- Do not remove existing functionality unless instructed
+
+When responding:
+- Ask clarifying questions only if the requirement is ambiguous
+- Focus on code output, not strategy discussion
+- If unsure about an IBKR API call, follow official IBKR documentation
+
+We are now starting on: API Configuration Install IBKR Gateway or Client Portal API on the Pi, get credentials, test connections.

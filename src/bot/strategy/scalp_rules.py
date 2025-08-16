@@ -1,5 +1,5 @@
 from typing import Dict, Any
-import pandas as pd
+import pandas as pd  # type: ignore
 
 
 def _rsi_series(close: pd.Series, period: int = 14) -> pd.Series:

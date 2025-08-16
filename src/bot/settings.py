@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-import yaml
-from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import yaml  # type: ignore
+from pydantic import BaseModel, Field, field_validator  # type: ignore
+from pydantic_settings import BaseSettings, SettingsConfigDict  # type: ignore
 
 
 class BrokerSettings(BaseModel):

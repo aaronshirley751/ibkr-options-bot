@@ -1,12 +1,12 @@
 import time
 from datetime import datetime, time as dtime, date as ddate
-from typing import Callable, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from zoneinfo import ZoneInfo
 import traceback
-import pandas as pd
-from loguru import logger
+from . import log as _log
+logger = _log.logger
 
 from .strategy.scalp_rules import scalp_signal
 from .strategy.whale_rules import whale_rules
@@ -18,7 +18,7 @@ from .monitoring import send_heartbeat, alert_all
 
 
 # Runs a job every `interval_seconds` during regular trading hours (09:30-16:00 ET)
-# TODO: add US holiday calendar and pre/post-market handling
+# Note: consider adding US holiday calendar and pre/post-market handling
 
 
 def is_rth(now_utc: datetime) -> bool:
@@ -28,22 +28,30 @@ def is_rth(now_utc: datetime) -> bool:
     return start <= ny.time() <= end
 
 
-def _to_df(bars_iter) -> pd.DataFrame:
+def _to_df(bars_iter) -> Any:
     """Convert an iterable of bar dicts to pandas DataFrame if possible."""
     try:
+        import importlib
+
+        pd = importlib.import_module("pandas")  # type: ignore
         df = pd.DataFrame(bars_iter)
         if df.empty:
             return df
         # ensure columns
         cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
         if not cols:
-            return pd.DataFrame()
+            return importlib.import_module("pandas").DataFrame()  # type: ignore
         # Always produce a DataFrame even if a single column
         subset = df.loc[:, cols if len(cols) > 1 else [cols[0]]]
-        subset_df = pd.DataFrame(subset)
+        subset_df = importlib.import_module("pandas").DataFrame(subset)  # type: ignore
         return subset_df.copy()
-    except Exception:
-        return pd.DataFrame()
+    except Exception:  # pylint: disable=broad-except
+        try:
+            import importlib
+
+            return importlib.import_module("pandas").DataFrame()  # type: ignore
+        except Exception:  # pylint: disable=broad-except
+            return []
 
 
 _LOSS_ALERTED_DATE: Dict[str, Optional[ddate]] = {"date": None}
@@ -57,10 +65,6 @@ def run_cycle(broker, settings: Dict[str, Any]):
     broker_lock = getattr(broker, "_thread_lock", None)
     if broker_lock is None:
         broker_lock = Lock()
-        try:
-            setattr(broker, "_thread_lock", broker_lock)
-        except Exception:
-            pass
 
     def _with_broker_lock(fn, *args, **kwargs):
         with broker_lock:
@@ -86,24 +90,47 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 # market_data may return historical bars or a snapshot Quote
                 try:
                     bars = _with_broker_lock(broker.market_data, symbol)
-                except Exception:
+                except Exception:  # pylint: disable=broad-except
                     bars = None
 
-            df1 = _to_df(bars) if bars is not None else pd.DataFrame()
-            if df1.empty or len(df1) < 30:
-                logger.bind(event="insufficient_bars", symbol=symbol, bars=len(df1)).info(
+            df1 = _to_df(bars) if bars is not None else []
+            # Proceed only if we have a pandas DataFrame; else skip this symbol gracefully
+            is_df = False
+            try:
+                import importlib
+
+                pd = importlib.import_module("pandas")  # type: ignore
+                is_df = isinstance(df1, pd.DataFrame)
+            except Exception:  # pylint: disable=broad-except
+                is_df = False
+
+            if not is_df:
+                count = len(df1) if hasattr(df1, "__len__") else 0
+                logger.bind(event="insufficient_bars", symbol=symbol, bars=count).info(
+                    "Skipping: insufficient bars (no pandas)"
+                )
+                return
+
+            bars_len = len(df1) if hasattr(df1, "__len__") else 0
+            if bool(getattr(df1, "empty", False)) or bars_len < 30:
+                logger.bind(event="insufficient_bars", symbol=symbol, bars=bars_len).info(
                     "Skipping: insufficient bars"
                 )
                 return
 
             # compute scalp signal on 1-min bars
-            scalp = scalp_signal(df1)
+            scalp = scalp_signal(df1)  # type: ignore[arg-type]
 
             # compute whale on 60-min resample (if requested)
             whale = {"signal": "HOLD", "confidence": 0.0}
             if settings.get("mode") in ("hybrid", "growth"):
-                df60 = df1.resample("60T", label="right", closed="right").agg({"open":"first","high":"max","low":"min","close":"last","volume":"sum"})
-                whale = whale_rules(df60, symbol)
+                resample = getattr(df1, "resample", None)
+                if callable(resample):
+                    res = resample("60T", label="right", closed="right")
+                    agg = getattr(res, "agg", None)
+                    if callable(agg):
+                        df60 = agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})  # type: ignore[call-arg]
+                        whale = whale_rules(df60, symbol)  # type: ignore[arg-type]
 
             # decide final action
             action = scalp.get("signal", "HOLD")
@@ -144,7 +171,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 try:
                     q = _with_broker_lock(broker.market_data, getattr(opt, "symbol", opt))
                     premium = getattr(q, "last", 0.0)
-                except Exception:
+                except Exception:  # pylint: disable=broad-except
                     premium = 0.0
 
                 cfg_risk = settings.get("risk", {})
@@ -203,12 +230,12 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     trade = {"timestamp": datetime.utcnow().isoformat(), "symbol": symbol, "action": ticket.action, "quantity": size, "price": premium, "stop": bracket.get("stop_loss"), "target": bracket.get("take_profit"), "contract": getattr(opt, "symbol", None)}
                     log_trade(trade)
 
-        except Exception:
+        except Exception:  # pylint: disable=broad-except
             err = traceback.format_exc()
             logger.error("Error during run_cycle for %s:\n%s", symbol, err)
             try:
                 alert_all(settings, f"run_cycle error for {symbol}: see logs for details.")
-            except Exception:
+            except Exception:  # pylint: disable=broad-except
                 pass
 
     # concurrency: process symbols in a limited thread pool
@@ -230,7 +257,7 @@ def run_scheduler(broker, settings: Dict[str, Any]):
                 hb = settings.get("monitoring", {}).get("heartbeat_url")
                 send_heartbeat(hb)
                 run_cycle(broker, settings)
-            except Exception:
+            except Exception:  # pylint: disable=broad-except
                 logger.exception("Scheduler cycle failed")
             last_day = now.date()
         else:

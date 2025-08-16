@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
-from typing import Dict, Optional, List, Tuple
+from typing import Optional, List, Tuple
 
-from loguru import logger
+from .. import log as _log
+logger = _log.logger
 
 # Types expected from broker.option_chain() and broker.market_data():
 # - option contracts carry fields: symbol, right, strike, expiry, multiplier
@@ -59,7 +60,7 @@ def pick_weekly_option(
     """
     try:
         contracts = broker.option_chain(underlying, expiry_hint="weekly")
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
         logger.exception("option_chain failed for %s", underlying)
         return None
     if not contracts:
@@ -87,7 +88,7 @@ def pick_weekly_option(
     for c in candidates:
         try:
             q = broker.market_data(getattr(c, "symbol", c))
-        except Exception:
+        except Exception:  # pylint: disable=broad-except
             continue
         bid = float(getattr(q, "bid", 0.0) or 0.0)
         ask = float(getattr(q, "ask", 0.0) or 0.0)

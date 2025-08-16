@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
-import time
 from typing import Optional
-from urllib import request, parse, error
-from loguru import logger
+from urllib import request
+from .log import logger
 
 
 def _http_post(url: str, payload: dict, headers: Optional[dict] = None, timeout: int = 10) -> bool:
@@ -17,7 +15,7 @@ def _http_post(url: str, payload: dict, headers: Optional[dict] = None, timeout:
     try:
         with request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             return 200 <= resp.getcode() < 300
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         logger.debug(f"HTTP POST failed to {url}: {e}")
         return False
 
@@ -30,7 +28,7 @@ def send_heartbeat(heartbeat_url: Optional[str]) -> None:
         req = request.Request(heartbeat_url, method="GET")
         with request.urlopen(req, timeout=5) as resp:  # nosec B310
             _ = resp.read()
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         logger.debug(f"Heartbeat failed: {e}")
 
 

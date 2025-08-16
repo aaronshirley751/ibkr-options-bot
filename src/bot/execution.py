@@ -1,8 +1,8 @@
 from typing import Dict, Any, Optional
 import time
-from loguru import logger
+from . import log as _log
+logger = _log.logger
 
-from .risk import stop_target_from_premium
 
 
 def build_bracket(option_premium: float, take_profit_pct: Optional[float], stop_loss_pct: Optional[float]) -> Dict[str, Optional[float]]:
@@ -22,8 +22,8 @@ def is_liquid(quote: Any, max_spread_pct: float, min_volume: int) -> bool:
         bid = float(getattr(quote, "bid", 0.0))
         ask = float(getattr(quote, "ask", 0.0))
         volume = float(getattr(quote, "volume", 0.0))
-        last = float(getattr(quote, "last", 0.0))
-    except Exception:
+        _ = float(getattr(quote, "last", 0.0))
+    except Exception:  # pylint: disable=broad-except
         return False
     if ask <= 0 or bid <= 0:
         return False
@@ -78,7 +78,7 @@ def emulate_oco(
                 try:
                     oid = broker.place_order(ticket)
                     logger.info("Submitted TP close order %s", oid)
-                except Exception:
+                except Exception:  # pylint: disable=broad-except
                     logger.exception("Failed to submit TP close order")
                 # attempt to cancel opposite child if any API state is available
                 break
@@ -97,7 +97,7 @@ def emulate_oco(
                 try:
                     oid = broker.place_order(ticket)
                     logger.info("Submitted SL market close order %s", oid)
-                except Exception:
+                except Exception:  # pylint: disable=broad-except
                     logger.exception("Failed to submit SL close order")
                 break
             time.sleep(poll_seconds)

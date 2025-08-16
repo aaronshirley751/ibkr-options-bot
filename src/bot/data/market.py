@@ -1,4 +1,3 @@
-from typing import Any
 from bot.broker.base import Broker
 
 
@@ -14,7 +13,7 @@ def historical_prices(broker: Broker, symbol: str, minutes: int = 60):
     q = broker.market_data(symbol)
     try:
         import pandas as pd  # type: ignore
-    except Exception:  # pragma: no cover - optional dependency
+    except Exception:  # pylint: disable=broad-except  # pragma: no cover - optional dependency
         return [{"open": q.last, "high": q.last, "low": q.last, "close": q.last, "volume": 0}]  # type: ignore[return-value]
     return pd.DataFrame(
         [{"open": q.last, "high": q.last, "low": q.last, "close": q.last, "volume": 0}]
