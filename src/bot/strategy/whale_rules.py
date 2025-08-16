@@ -1,5 +1,5 @@
 from typing import Dict, Any
-import pandas as pd
+import pandas as pd  # type: ignore
 from datetime import datetime, timedelta
 
 # simple in-memory debounce store: symbol -> last_whale_timestamp

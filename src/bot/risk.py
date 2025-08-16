@@ -52,7 +52,7 @@ def load_equity_state(path: Path = DEFAULT_STATE_PATH) -> dict:
             return {}
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
         return {}
 
 
@@ -76,7 +76,7 @@ def get_start_of_day_equity(broker, path: Path = DEFAULT_STATE_PATH) -> Optional
     # initialize
     try:
         cur = float(broker.pnl().get("net", 0.0))
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
         cur = 0.0
     state[key] = cur
     save_equity_state(state, path)
@@ -88,6 +88,6 @@ def should_stop_trading_today(broker, max_daily_loss_pct: float, path: Path = DE
     sod = get_start_of_day_equity(broker, path)
     try:
         now = float(broker.pnl().get("net", 0.0))
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
         now = 0.0
     return guard_daily_loss(sod or 0.0, now, max_daily_loss_pct)

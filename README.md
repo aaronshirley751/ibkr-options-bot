@@ -23,6 +23,14 @@ python -m pytest -q
 Files of interest: `src/bot/app.py`, `src/bot/broker/ibkr.py`, `configs/settings.yaml`.
 See also: `ROADMAP.md` for phased deployment guidance.
 
+Start Here Next Session
+-----------------------
+
+- Choose IBKR Gateway image path (GHCR auth vs. public image) and bring the Gateway up on the Pi.
+- On the Pi: run the connectivity test make targets (paper mode) once the Gateway is up.
+- On this Windows machine: install Python 3.11+, then create a venv and run tests locally.
+- Follow-ups: wire CI, implement missing broker data paths, and expand unit tests with a FakeBroker.
+
 Pre-commit hooks
 -----------------
 
@@ -293,3 +301,23 @@ Parallelism & scalability
 - The scheduler can process multiple symbols concurrently using threads. Control via `schedule.max_concurrent_symbols` (default 2).
 - Broker calls are serialized through an internal lock to avoid thread-safety issues in client libraries; adjust if your broker impl is thread-safe.
 - Journal writes are protected with a file lock to avoid corruption.
+
+
+Progress update (2025-08-16)
+----------------------------
+
+What’s done
+- Introduced a unified logger shim at `src/bot/log.py` that prefers loguru and falls back to stdlib logging.
+- Made `src/bot/logging_conf.py` resilient: uses the unified logger and no-ops when loguru sinks aren’t available.
+- Hardened `src/bot/scheduler.py` against missing pandas: added guards to only use DataFrame operations when available.
+- Cleaned indentation and stabilized formatting issues that previously tripped static checks.
+
+Notes
+- Local Windows shell currently lacks Python (venv creation failed). Tests will pass once Python 3.11+ is installed.
+- Pi side remains the target for IBKR end-to-end checks; ensure the Gateway image decision (GHCR vs. public) is finalized.
+
+Start here: bite-size next steps
+1) Pi/Gateway: authenticate to GHCR and keep the current image, or swap to a public Gateway image in `docker-compose.gateway.yml` and start it.
+2) Connectivity: run `make venv && make ibkr-deps && make ibkr-test` on the Pi; optionally `make ibkr-test-whatif`.
+3) Local dev: install Python 3.11+, set up venv, `pip install -r requirements.txt -r requirements-dev.txt`, then run `pytest -q`.
+4) CI: add GitHub Actions for ruff/black/mypy/pytest when local runs are green.

@@ -1,4 +1,5 @@
-from loguru import logger
+from . import log as _log
+logger = _log.logger
 from .settings import get_settings
 
 
@@ -25,7 +26,7 @@ def main():
     finally:
         try:
             broker.disconnect()
-        except Exception:
+        except Exception:  # pylint: disable=broad-except
             pass
 
 
