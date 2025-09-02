@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
 from .. import log as _log
+
 logger = _log.logger
 
 # Types expected from broker.option_chain() and broker.market_data():
@@ -14,7 +15,9 @@ def nearest_friday(start: datetime) -> datetime:
     days_ahead = 4 - start.weekday()  # Monday=0
     if days_ahead <= 0:
         days_ahead += 7
-    return (start + timedelta(days=days_ahead)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return (start + timedelta(days=days_ahead)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
 
 
 def nearest_atm_strike(last_price: float, strikes: list) -> Optional[float]:
@@ -23,7 +26,9 @@ def nearest_atm_strike(last_price: float, strikes: list) -> Optional[float]:
     return min(strikes, key=lambda s: abs(s - last_price))
 
 
-def _strike_from_moneyness(last_price: float, strikes: List[float], moneyness: str) -> Optional[float]:
+def _strike_from_moneyness(
+    last_price: float, strikes: List[float], moneyness: str
+) -> Optional[float]:
     if not strikes:
         return None
     # offset logic: itmp1 = one step in-the-money; otmp1 = one step out-of-the-money
@@ -67,7 +72,9 @@ def pick_weekly_option(
         return None
 
     # Narrow by right
-    contracts = [c for c in contracts if getattr(c, "right", "").upper() == right.upper()]
+    contracts = [
+        c for c in contracts if getattr(c, "right", "").upper() == right.upper()
+    ]
     if not contracts:
         return None
 

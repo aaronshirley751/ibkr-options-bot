@@ -1,4 +1,4 @@
-from src.bot.risk import position_size, guard_daily_loss
+from src.bot.risk import guard_daily_loss, position_size
 
 
 def test_position_size_basic():

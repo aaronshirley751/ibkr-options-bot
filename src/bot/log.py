@@ -13,7 +13,9 @@ except ImportError:  # pragma: no cover
 
     class _StdLogger:
         def __init__(self) -> None:
-            logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+            logging.basicConfig(
+                level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+            )
             self._logger = logging.getLogger("ibkr-bot")
 
         def debug(self, *args, **kwargs):

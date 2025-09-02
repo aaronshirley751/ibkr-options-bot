@@ -1,8 +1,8 @@
 import csv
 import json
 from pathlib import Path
-from typing import Dict
 from threading import Lock
+from typing import Dict
 
 LOG_DIR = Path.cwd() / "logs"
 LOG_DIR.mkdir(exist_ok=True)

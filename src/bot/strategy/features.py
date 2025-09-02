@@ -1,4 +1,5 @@
 from typing import List
+
 import numpy as np
 
 
@@ -32,7 +33,7 @@ def vwap(prices: List[float], volumes: List[float], period: int) -> List[float]:
         window_p = p[i - period + 1 : i + 1]
         window_v = v[i - period + 1 : i + 1]
         denom = window_v.sum()
-        out.append((window_p * window_v).sum() / denom if denom != 0 else float('nan'))
+        out.append((window_p * window_v).sum() / denom if denom != 0 else float("nan"))
     return out
 
 
@@ -48,13 +49,13 @@ def rsi(prices: List[float], period: int = 14) -> List[float]:
     seed = deltas[:period]
     up = seed[seed >= 0].sum() / period
     down = -seed[seed < 0].sum() / period
-    rs = up / down if down != 0 else float('inf')
+    rs = up / down if down != 0 else float("inf")
     rsi_vals = [100 - 100 / (1 + rs)]
     for delta in deltas[period:]:
         up_val = max(delta, 0)
         down_val = -min(delta, 0)
         up = (up * (period - 1) + up_val) / period
         down = (down * (period - 1) + down_val) / period
-        rs = up / down if down != 0 else float('inf')
+        rs = up / down if down != 0 else float("inf")
         rsi_vals.append(100 - 100 / (1 + rs))
     return rsi_vals

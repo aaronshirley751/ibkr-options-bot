@@ -1,11 +1,16 @@
-from typing import Dict, Any, Optional
 import time
+from typing import Any, Dict, Optional
+
 from . import log as _log
+
 logger = _log.logger
 
 
-
-def build_bracket(option_premium: float, take_profit_pct: Optional[float], stop_loss_pct: Optional[float]) -> Dict[str, Optional[float]]:
+def build_bracket(
+    option_premium: float,
+    take_profit_pct: Optional[float],
+    stop_loss_pct: Optional[float],
+) -> Dict[str, Optional[float]]:
     """Return limit and stop prices for an option given premium and pct targets."""
     tp = None
     sl = None
@@ -104,4 +109,9 @@ def emulate_oco(
     except KeyboardInterrupt:
         logger.info("Emulated OCO interrupted")
     finally:
-        logger.info("Emulated OCO finished for parent %s (tp=%s sl=%s)", parent_order_id, tp_triggered, sl_triggered)
+        logger.info(
+            "Emulated OCO finished for parent %s (tp=%s sl=%s)",
+            parent_order_id,
+            tp_triggered,
+            sl_triggered,
+        )

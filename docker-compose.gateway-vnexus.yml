@@ -1,0 +1,15 @@
+version: "3.8"
+services:
+  gateway:
+    image: "vnexus/ib-gateway:latest"
+    container_name: ibkr-gateway-vnexus
+    environment:
+      - TWS_USERID=${IBKR_USERNAME}
+      - TWS_PASSWORD=${IBKR_PASSWORD}
+      - TWS_TRADING_MODE=paper
+      - VNC_SERVER_PASSWORD=vncpassword
+      - TZ=${TZ:-UTC}
+    ports:
+      - "4002:4002"
+      - "5900:5900"  # VNC for debugging
+    restart: unless-stopped

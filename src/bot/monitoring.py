@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 from typing import Optional
 from urllib import request
+
 from .log import logger
 
 
-def _http_post(url: str, payload: dict, headers: Optional[dict] = None, timeout: int = 10) -> bool:
+def _http_post(
+    url: str, payload: dict, headers: Optional[dict] = None, timeout: int = 10
+) -> bool:
     data = json.dumps(payload).encode("utf-8")
     req = request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
@@ -41,7 +44,9 @@ def notify_slack(webhook_url: Optional[str], message: str) -> None:
         logger.debug("Slack notification failed")
 
 
-def notify_telegram(bot_token: Optional[str], chat_id: Optional[str], message: str) -> None:
+def notify_telegram(
+    bot_token: Optional[str], chat_id: Optional[str], message: str
+) -> None:
     if not bot_token or not chat_id:
         return
     # Telegram sendMessage API

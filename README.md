@@ -4,50 +4,125 @@ Lightweight scaffold for an IBKR options trading bot.
 
 Structure and goals are in the repository root. This project is a starting point and intentionally minimal — add credentials to `.env` and tune `configs/settings.yaml` before running.
 
-Quickstart
+## 🚀 Start Here for Next Session
 
-1. Create a Python 3.11+ virtual environment and activate it.
-2. Install requirements:
+### Current Status Summary
+- ✅ **Local Development Environment**: Python 3.12.10 installed, all dependencies ready, 7/7 tests passing
+- ✅ **Code Quality**: Comprehensive test suite with 27% coverage, linting tools configured
+- ✅ **AI Guidance**: Updated `.github/copilot-instructions.md` with comprehensive patterns and conventions
+- ⏳ **Pi Gateway**: Alternative Docker configurations prepared, authentication scripts ready
+- ⏳ **End-to-End Testing**: Awaiting Gateway resolution for connectivity validation
 
+### Immediate Priorities
+
+#### PRIORITY 1: Pi Gateway Resolution
+**Current Blocker**: Docker image access for IBKR Gateway deployment
+**Ready Solutions**:
+- `scripts/test_gateway_options.sh` - Test all Docker alternatives automatically
+- `docker-compose.gateway-vnexus.yml` - VNC-based Gateway with authentication
+- `docker-compose.gateway-uaf.yml` - UAF Gateway alternative
+- `docs/GATEWAY_AUTH_INSTRUCTIONS.md` - Step-by-step authentication guide
+
+**Next Actions**:
+1. Run `bash scripts/test_gateway_options.sh` on Pi to test all alternatives
+2. If successful: `make ibkr-test` for connectivity validation
+3. If blocked: Follow manual Gateway installation from `docs/IBKR_SETUP.md`
+
+#### PRIORITY 2: Local Development Ready
+**Current Status**: ✅ Fully functional
+**Testing Commands**:
 ```bash
-python -m pip install -r requirements.txt
+# Run all tests (7/7 passing)
+pytest tests/ -v
+
+# Run with coverage (27% current)
+pytest tests/ --cov=src/bot --cov-report=term-missing
+
+# Code quality
+ruff check src tests && black src tests
 ```
 
-3. Copy `.env.example` -> `.env` and fill in IBKR credentials.
-4. Run tests:
+#### PRIORITY 3: Production Readiness
+**Next Development Steps**:
+- Increase test coverage (current: 27%, target: 60%+)
+- Add broker protocol integration tests
+- Implement end-to-end paper trading validation
+- Performance testing with concurrent symbols
 
+### Quick Commands
+
+#### Local Testing
 ```bash
-python -m pytest -q
+# Development environment ready
+pytest tests/ -v                    # All tests (7/7 passing)
+python -m src.bot.app               # Run bot locally (stub broker)
+make test                          # Full test suite
 ```
 
-Files of interest: `src/bot/app.py`, `src/bot/broker/ibkr.py`, `configs/settings.yaml`.
-See also: `ROADMAP.md` for phased deployment guidance.
+#### Pi Deployment
+```bash
+# On Pi - test Gateway options
+bash scripts/test_gateway_options.sh
 
-Start Here Next Session
------------------------
+# If Gateway working
+make ibkr-test                     # Test IBKR connectivity
+make run                          # Production deployment
+```
 
-**PRIORITY 1: Gateway Resolution**
-- Pi environment is ready but Gateway deployment is blocked
-- Need to resolve Docker image access issue by choosing one path:
-  1. GHCR Authentication: Create GitHub PAT → `docker login ghcr.io` on Pi
-  2. Alternative: Find working public IB Gateway image or manual installation
-  3. Fallback: Install IB Gateway directly without Docker
+#### Development Workflow
+```bash
+# Code quality (already configured)
+ruff check --fix src tests        # Auto-fix linting
+black src tests                   # Format code
+mypy src tests                    # Type checking
+```
 
-**PRIORITY 2: End-to-End Testing**
-- Once Gateway is running on Pi: `make ibkr-test` for connectivity validation
-- Test environment is fully prepared with ib_insync and credentials configured
+### Architecture Overview
 
-**PRIORITY 3: Local Development**
-- Install Python 3.11+ on Windows machine
-- Create venv and run tests locally to validate code changes before Pi deployment
+This bot implements a **protocol-based broker architecture** with:
+- **Broker Abstraction**: Protocol interface allowing StubBroker (testing) and IBKRBroker (production)
+- **Strategy Layer**: Scalp rules and whale detection with configurable parameters
+- **Risk Management**: Position sizing, daily loss guards, thread-safe operations
+- **Orchestration**: Scheduler with cron-like execution, structured logging
 
-**Status Summary:**
-- ✅ Pi SSH access configured and working
-- ✅ Repository synchronized with latest changes
-- ✅ Python environment and dependencies installed on Pi
-- ✅ IBKR credentials configured
-- ❌ Gateway deployment blocked by image access issues
-- ❌ Local Python environment missing on Windows
+**Key Files**:
+- `src/bot/app.py` - Main application entry point
+- `src/bot/broker/ibkr.py` - IBKR connectivity and order management
+- `src/bot/strategy/scalp_rules.py` - Primary trading strategy
+- `configs/settings.yaml` - Configuration management
+- `.github/copilot-instructions.md` - AI agent guidance (200+ lines)
+
+## Development Setup
+
+### Quickstart
+1. **Python Environment** (✅ Complete):
+   ```bash
+   # Virtual environment ready with Python 3.12.10
+   # All dependencies installed (core + development)
+   ```
+
+2. **Configuration**:
+   ```bash
+   cp .env.example .env              # Add IBKR credentials
+   vim configs/settings.yaml        # Tune strategy parameters
+   ```
+
+3. **Testing** (✅ Validated):
+   ```bash
+   pytest tests/ -v                 # 7/7 tests passing
+   ```
+
+4. **Gateway Deployment**:
+   ```bash
+   # On Pi - test options
+   bash scripts/test_gateway_options.sh
+   ```
+
+### Documentation
+- `ROADMAP.md` - Phased deployment strategy
+- `docs/TESTING_OUTCOMES.md` - Comprehensive test results and coverage analysis
+- `docs/IBKR_SETUP.md` - IBKR account and Gateway setup
+- `docs/GATEWAY_AUTH_INSTRUCTIONS.md` - Docker authentication solutions
 
 Pre-commit hooks
 -----------------

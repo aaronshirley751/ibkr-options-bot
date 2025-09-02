@@ -1,0 +1,57 @@
+# Alternative Gateway configurations to try on Pi
+# Copy one of these sections to docker-compose.gateway.yml
+
+# Option 1: Original GHCR (requires authentication)
+version: "3.8"
+services:
+  gateway-ghcr:
+    image: ghcr.io/gyrasol/ibkr-gateway:latest
+    container_name: ibkr-gateway-ghcr
+    environment:
+      - TWSUSER=${IBKR_USERNAME}
+      - TWSPASSWORD=${IBKR_PASSWORD}
+      - PAPER=true
+      - FIX=false
+      - VNC=false
+      - TRADING_MODE=paper
+      - TWS_MAJOR_VRSN=1015
+      - TZ=${TZ:-UTC}
+    ports:
+      - "4002:4002"
+    restart: unless-stopped
+
+---
+# Option 2: Alternative public image (if available)
+version: "3.8"
+services:
+  gateway-alt1:
+    image: "vnexus/ib-gateway:latest"  # Alternative 1
+    container_name: ibkr-gateway-alt1
+    environment:
+      - TWS_USERID=${IBKR_USERNAME}
+      - TWS_PASSWORD=${IBKR_PASSWORD}
+      - TWS_TRADING_MODE=paper
+      - VNC_SERVER_PASSWORD=vncpassword
+    ports:
+      - "4002:4002"
+      - "5900:5900"  # VNC
+    restart: unless-stopped
+
+---
+# Option 3: Simple Ubuntu-based custom build
+version: "3.8"
+services:
+  gateway-manual:
+    image: ubuntu:20.04
+    container_name: ibkr-gateway-manual
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+      - IBKR_USERNAME=${IBKR_USERNAME}
+      - IBKR_PASSWORD=${IBKR_PASSWORD}
+      - TZ=${TZ:-UTC}
+    ports:
+      - "4002:4002"
+    volumes:
+      - ./scripts:/scripts:ro
+    command: /scripts/install_and_run_gateway.sh
+    restart: unless-stopped

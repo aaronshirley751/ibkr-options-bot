@@ -1,4 +1,5 @@
-from typing import Dict, Any
+from typing import Any, Dict
+
 import pandas as pd  # type: ignore
 
 
@@ -35,7 +36,11 @@ def scalp_signal(df: pd.DataFrame) -> Dict[str, Any]:
     ema_slow = close.ewm(span=21, adjust=False).mean().iloc[-1]
 
     rsi_series = _rsi_series(close, period=14)
-    rsi_val = float(rsi_series.iloc[-1]) if not rsi_series.empty and pd.notna(rsi_series.iloc[-1]) else 50.0
+    rsi_val = (
+        float(rsi_series.iloc[-1])
+        if not rsi_series.empty and pd.notna(rsi_series.iloc[-1])
+        else 50.0
+    )
 
     last_price = float(close.iloc[-1])
 
@@ -53,7 +58,10 @@ def scalp_signal(df: pd.DataFrame) -> Dict[str, Any]:
     # SELL if ema_fast<ema_slow or rsi<40
     elif ema_fast < ema_slow or rsi_val < 40:
         signal = "SELL"
-        gap = max(0.0, (ema_slow - ema_fast) / (ema_fast if ema_fast != 0 else ema_slow or 1.0))
+        gap = max(
+            0.0,
+            (ema_slow - ema_fast) / (ema_fast if ema_fast != 0 else ema_slow or 1.0),
+        )
         rsi_score = max(0.0, (40 - rsi_val) / 40)
         confidence = min(1.0, 0.6 * min(1.0, gap * 5) + 0.4 * rsi_score)
 

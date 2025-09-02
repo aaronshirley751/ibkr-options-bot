@@ -1,16 +1,21 @@
-from typing import Dict, Any, Iterable, Optional, List
 import os
 import time
 import uuid
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 from loguru import logger
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
-from ..broker.base import Quote, OptionContract, OrderTicket
+from ..broker.base import OptionContract, OrderTicket, Quote
 
 try:  # ib_insync is an optional runtime dependency
-    from ib_insync import IB, Stock, Option, MarketOrder, LimitOrder, Contract, Order
+    from ib_insync import IB, Contract, LimitOrder, MarketOrder, Option, Order, Stock
 except Exception:  # pragma: no cover - optional dependency
     IB = None
 
@@ -25,7 +30,13 @@ def _next_friday_date(start: datetime) -> str:
 
 
 class IBKRBroker:
-    def __init__(self, host: Optional[str] = None, port: Optional[int] = None, client_id: Optional[int] = None, paper: bool = True):
+    def __init__(
+        self,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        client_id: Optional[int] = None,
+        paper: bool = True,
+    ):
         # load defaults from env or settings file
         host = host or os.getenv("IBKR_HOST") or "127.0.0.1"
         port = port or int(os.getenv("IBKR_PORT") or (4002 if paper else 4001))
@@ -37,13 +48,22 @@ class IBKRBroker:
         self.paper = paper
         self.ib = IB() if IB else None
 
-    @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), retry=retry_if_exception_type(Exception))
+    @retry(
+        wait=wait_exponential(min=1, max=10),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception_type(Exception),
+    )
     def connect(self, timeout: int = 10) -> None:
         if not self.ib:
             raise RuntimeError("ib_insync not installed")
         if self.ib.isConnected():
             return
-        logger.info("Connecting to IB at %s:%s clientId=%s", self.host, self.port, self.client_id)
+        logger.info(
+            "Connecting to IB at %s:%s clientId=%s",
+            self.host,
+            self.port,
+            self.client_id,
+        )
         self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=timeout)
 
     def is_connected(self) -> bool:
@@ -62,13 +82,17 @@ class IBKRBroker:
                 last = float(ticker.last or ticker.close)
                 bid = float(ticker.bid)
                 ask = float(ticker.ask)
-                return Quote(symbol=symbol, last=last, bid=bid, ask=ask, time=time.time())
+                return Quote(
+                    symbol=symbol, last=last, bid=bid, ask=ask, time=time.time()
+                )
             time.sleep(0.2)
         # fallback: return empty quote with zeros
         logger.warning("market_data timeout for %s", symbol)
         return Quote(symbol=symbol, last=0.0, bid=0.0, ask=0.0, time=time.time())
 
-    def option_chain(self, symbol: str, expiry_hint: str = "weekly") -> List[OptionContract]:
+    def option_chain(
+        self, symbol: str, expiry_hint: str = "weekly"
+    ) -> List[OptionContract]:
         """Fetch option expirations and strikes and return a list of OptionContract for nearest weekly ATM calls and puts."""
         if not self.is_connected():
             self.connect()
@@ -97,7 +121,12 @@ class IBKRBroker:
             expiry = _next_friday_date(datetime.utcnow())
             # if expiry not in expirations, choose the nearest future
             if expiry not in expirations:
-                expiry = min(expirations, key=lambda d: abs(datetime.strptime(d, "%Y%m%d").date() - datetime.utcnow().date()))
+                expiry = min(
+                    expirations,
+                    key=lambda d: abs(
+                        datetime.strptime(d, "%Y%m%d").date() - datetime.utcnow().date()
+                    ),
+                )
         else:
             expiry = expirations[0]
 
@@ -111,11 +140,26 @@ class IBKRBroker:
         contracts: List[OptionContract] = []
         # create ATM Call and Put
         for right in ("C", "P"):
-            contracts.append(OptionContract(symbol=symbol, right=right, strike=float(atm), expiry=expiry, multiplier=100))
+            contracts.append(
+                OptionContract(
+                    symbol=symbol,
+                    right=right,
+                    strike=float(atm),
+                    expiry=expiry,
+                    multiplier=100,
+                )
+            )
         return contracts
 
     def _to_ib_contract(self, oc: OptionContract) -> Contract:
-        return Option(symbol=oc.symbol, lastTradeDateOrContractMonth=oc.expiry, strike=oc.strike, right=oc.right, exchange="SMART", multiplier=str(oc.multiplier))
+        return Option(
+            symbol=oc.symbol,
+            lastTradeDateOrContractMonth=oc.expiry,
+            strike=oc.strike,
+            right=oc.right,
+            exchange="SMART",
+            multiplier=str(oc.multiplier),
+        )
 
     def place_order(self, ticket: OrderTicket) -> str:
         if not self.is_connected():
@@ -154,14 +198,22 @@ class IBKRBroker:
             # calculate TP/SL based on last price if option contract
             last_price = 0.0
             try:
-                q = self.market_data(ticket.contract.symbol if isinstance(ticket.contract, OptionContract) else ticket.contract)
+                q = self.market_data(
+                    ticket.contract.symbol
+                    if isinstance(ticket.contract, OptionContract)
+                    else ticket.contract
+                )
                 last_price = q.last
             except Exception:
                 last_price = 0.0
 
             if ticket.take_profit_pct and last_price:
                 tp_price = last_price * (1 + ticket.take_profit_pct)
-                tp = LimitOrder("SELL" if ticket.action == "BUY" else "BUY", ticket.quantity, round(tp_price, 2))
+                tp = LimitOrder(
+                    "SELL" if ticket.action == "BUY" else "BUY",
+                    ticket.quantity,
+                    round(tp_price, 2),
+                )
                 tp.parentId = parent_order_id
                 tp.ocaGroup = oca_group
                 tp.transmit = False
@@ -170,7 +222,11 @@ class IBKRBroker:
 
             if ticket.stop_loss_pct and last_price:
                 sl_price = last_price * (1 - ticket.stop_loss_pct)
-                sl = LimitOrder("SELL" if ticket.action == "BUY" else "BUY", ticket.quantity, round(sl_price, 2))
+                sl = LimitOrder(
+                    "SELL" if ticket.action == "BUY" else "BUY",
+                    ticket.quantity,
+                    round(sl_price, 2),
+                )
                 sl.parentId = parent_order_id
                 sl.ocaGroup = oca_group
                 sl.transmit = True  # last in group transmits
@@ -202,7 +258,13 @@ class IBKRBroker:
         out: List[Dict[str, Any]] = []
         for pos in self.ib.positions():
             contract = pos.contract
-            out.append({"symbol": getattr(contract, "symbol", str(contract)), "position": pos.position, "avgCost": getattr(pos, "avgCost", None)})
+            out.append(
+                {
+                    "symbol": getattr(contract, "symbol", str(contract)),
+                    "position": pos.position,
+                    "avgCost": getattr(pos, "avgCost", None),
+                }
+            )
         return out
 
     def pnl(self) -> Dict[str, float]:
@@ -228,7 +290,14 @@ class IBKRBroker:
         except Exception:
             return {}
 
-    def historical_prices(self, symbol: str, duration: str = "60 M", bar_size: str = "1 min", what_to_show: str = "TRADES", use_rth: bool = True):
+    def historical_prices(
+        self,
+        symbol: str,
+        duration: str = "60 M",
+        bar_size: str = "1 min",
+        what_to_show: str = "TRADES",
+        use_rth: bool = True,
+    ):
         """Fetch historical OHLCV bars as a pandas DataFrame indexed by time.
 
         Args:

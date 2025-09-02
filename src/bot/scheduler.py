@@ -1,21 +1,24 @@
 import time
-from datetime import datetime, time as dtime, date as ddate
-from typing import Dict, Any, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
-from zoneinfo import ZoneInfo
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date as ddate
+from datetime import datetime
+from datetime import time as dtime
+from threading import Lock
+from typing import Any, Dict, Optional
+from zoneinfo import ZoneInfo
+
 from . import log as _log
+
 logger = _log.logger
 
-from .strategy.scalp_rules import scalp_signal
-from .strategy.whale_rules import whale_rules
-from .risk import position_size, should_stop_trading_today
+from .data.options import pick_weekly_option
 from .execution import build_bracket, emulate_oco, is_liquid
 from .journal import log_trade
-from .data.options import pick_weekly_option
-from .monitoring import send_heartbeat, alert_all
-
+from .monitoring import alert_all, send_heartbeat
+from .risk import position_size, should_stop_trading_today
+from .strategy.scalp_rules import scalp_signal
+from .strategy.whale_rules import whale_rules
 
 # Runs a job every `interval_seconds` during regular trading hours (09:30-16:00 ET)
 # Note: consider adding US holiday calendar and pre/post-market handling
@@ -38,7 +41,9 @@ def _to_df(bars_iter) -> Any:
         if df.empty:
             return df
         # ensure columns
-        cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+        cols = [
+            c for c in ["open", "high", "low", "close", "volume"] if c in df.columns
+        ]
         if not cols:
             return importlib.import_module("pandas").DataFrame()  # type: ignore
         # Always produce a DataFrame even if a single column
@@ -73,13 +78,22 @@ def run_cycle(broker, settings: Dict[str, Any]):
     def process_symbol(symbol: str):
         try:
             # Check daily loss guard once per cycle; if triggered, skip new entries
-            loss_guard = should_stop_trading_today(broker, settings.get("risk", {}).get("max_daily_loss_pct", 0.15))
+            loss_guard = should_stop_trading_today(
+                broker, settings.get("risk", {}).get("max_daily_loss_pct", 0.15)
+            )
             if loss_guard:
                 logger.warning("Daily loss guard active; skipping new positions")
                 # Alert once per trading day
-                ny = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/New_York"))
+                ny = (
+                    datetime.utcnow()
+                    .replace(tzinfo=ZoneInfo("UTC"))
+                    .astimezone(ZoneInfo("America/New_York"))
+                )
                 if _LOSS_ALERTED_DATE["date"] != ny.date():
-                    alert_all(settings, f"Daily loss limit breached. Pausing new entries for {ny.date()}.")
+                    alert_all(
+                        settings,
+                        f"Daily loss limit breached. Pausing new entries for {ny.date()}.",
+                    )
                     _LOSS_ALERTED_DATE["date"] = ny.date()
                 return
             # fetch recent 1-min bars; try multiple broker methods
@@ -113,9 +127,9 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
             bars_len = len(df1) if hasattr(df1, "__len__") else 0
             if bool(getattr(df1, "empty", False)) or bars_len < 30:
-                logger.bind(event="insufficient_bars", symbol=symbol, bars=bars_len).info(
-                    "Skipping: insufficient bars"
-                )
+                logger.bind(
+                    event="insufficient_bars", symbol=symbol, bars=bars_len
+                ).info("Skipping: insufficient bars")
                 return
 
             # compute scalp signal on 1-min bars
@@ -161,22 +175,29 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     max_spread_pct=cfg_opts.get("max_spread_pct", 2.0),
                 )
                 if not opt:
-                    logger.bind(event="skip", symbol=symbol, reason="no_viable_option").info(
-                        "Skipping: no viable option"
-                    )
+                    logger.bind(
+                        event="skip", symbol=symbol, reason="no_viable_option"
+                    ).info("Skipping: no viable option")
                     return
 
                 # get option premium
                 q = None
                 try:
-                    q = _with_broker_lock(broker.market_data, getattr(opt, "symbol", opt))
+                    q = _with_broker_lock(
+                        broker.market_data, getattr(opt, "symbol", opt)
+                    )
                     premium = getattr(q, "last", 0.0)
                 except Exception:  # pylint: disable=broad-except
                     premium = 0.0
 
                 cfg_risk = settings.get("risk", {})
                 equity = _with_broker_lock(broker.pnl).get("net", 100000.0)
-                size = position_size(equity, cfg_risk.get("max_risk_pct_per_trade", 0.01), cfg_risk.get("stop_loss_pct", 0.2), premium or 0.0)
+                size = position_size(
+                    equity,
+                    cfg_risk.get("max_risk_pct_per_trade", 0.01),
+                    cfg_risk.get("stop_loss_pct", 0.2),
+                    premium or 0.0,
+                )
                 if size <= 0:
                     logger.bind(event="skip", symbol=symbol, reason="size_zero").info(
                         "Skipping: size zero"
@@ -185,21 +206,38 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
                 # check liquidity
                 # Re-check liquidity guard with same thresholds
-                if q is None or not is_liquid(q, cfg_opts.get("max_spread_pct", 2.0), cfg_opts.get("min_volume", 100)):
+                if q is None or not is_liquid(
+                    q,
+                    cfg_opts.get("max_spread_pct", 2.0),
+                    cfg_opts.get("min_volume", 100),
+                ):
                     logger.bind(event="skip", symbol=symbol, reason="illiquid").info(
                         "Skipping: illiquid contract"
                     )
                     return
 
                 # build bracket
-                bracket = build_bracket(premium, cfg_risk.get("take_profit_pct"), cfg_risk.get("stop_loss_pct"))
+                bracket = build_bracket(
+                    premium,
+                    cfg_risk.get("take_profit_pct"),
+                    cfg_risk.get("stop_loss_pct"),
+                )
 
                 # submit order via broker.place_order using OrderTicket dataclass
                 from .broker.base import OrderTicket
 
-                ticket = OrderTicket(contract=opt, action=("BUY" if action.startswith("BUY") else "SELL"), quantity=size, order_type="MKT", take_profit_pct=cfg_risk.get("take_profit_pct"), stop_loss_pct=cfg_risk.get("stop_loss_pct"))
+                ticket = OrderTicket(
+                    contract=opt,
+                    action=("BUY" if action.startswith("BUY") else "SELL"),
+                    quantity=size,
+                    order_type="MKT",
+                    take_profit_pct=cfg_risk.get("take_profit_pct"),
+                    stop_loss_pct=cfg_risk.get("stop_loss_pct"),
+                )
                 if settings.get("dry_run"):
-                    logger.bind(event="dry_run", symbol=symbol, ticket=ticket.__dict__).info("Dry-run: would place order")
+                    logger.bind(
+                        event="dry_run", symbol=symbol, ticket=ticket.__dict__
+                    ).info("Dry-run: would place order")
                     order_id = "DRYRUN"
                 else:
                     order_id = _with_broker_lock(broker.place_order, ticket)
@@ -227,19 +265,32 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
                 # log trade
                 if not settings.get("dry_run"):
-                    trade = {"timestamp": datetime.utcnow().isoformat(), "symbol": symbol, "action": ticket.action, "quantity": size, "price": premium, "stop": bracket.get("stop_loss"), "target": bracket.get("take_profit"), "contract": getattr(opt, "symbol", None)}
+                    trade = {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "symbol": symbol,
+                        "action": ticket.action,
+                        "quantity": size,
+                        "price": premium,
+                        "stop": bracket.get("stop_loss"),
+                        "target": bracket.get("take_profit"),
+                        "contract": getattr(opt, "symbol", None),
+                    }
                     log_trade(trade)
 
         except Exception:  # pylint: disable=broad-except
             err = traceback.format_exc()
             logger.error("Error during run_cycle for %s:\n%s", symbol, err)
             try:
-                alert_all(settings, f"run_cycle error for {symbol}: see logs for details.")
+                alert_all(
+                    settings, f"run_cycle error for {symbol}: see logs for details."
+                )
             except Exception:  # pylint: disable=broad-except
                 pass
 
     # concurrency: process symbols in a limited thread pool
-    max_workers = int(settings.get("schedule", {}).get("max_concurrent_symbols", 2) or 1)
+    max_workers = int(
+        settings.get("schedule", {}).get("max_concurrent_symbols", 2) or 1
+    )
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(process_symbol, sym): sym for sym in symbols}
         for _ in as_completed(futures):
@@ -263,7 +314,9 @@ def run_scheduler(broker, settings: Dict[str, Any]):
         else:
             # if we just ended a trading day, emit a simple summary placeholder
             if last_day is not None and now.date() != last_day:
-                logger.bind(event="eod_summary").info("End of day summary emitted (stub)")
+                logger.bind(event="eod_summary").info(
+                    "End of day summary emitted (stub)"
+                )
                 # Reset daily loss alert flag for the new day
                 _LOSS_ALERTED_DATE["date"] = None
                 last_day = None

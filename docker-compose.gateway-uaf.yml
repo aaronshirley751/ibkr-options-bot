@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  gateway:
+    image: "universalappfactory/ib-gateway"
+    container_name: ibkr-gateway-uaf
+    environment:
+      - IB_USERNAME=${IBKR_USERNAME}
+      - IB_PASSWORD=${IBKR_PASSWORD}
+      - IB_PAPER_TRADING=true
+      - TZ=${TZ:-UTC}
+    ports:
+      - "4002:4002"
+    restart: unless-stopped

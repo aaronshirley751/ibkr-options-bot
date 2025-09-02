@@ -1,6 +1,7 @@
-from typing import Dict, Any
-import pandas as pd  # type: ignore
 from datetime import datetime, timedelta
+from typing import Any, Dict
+
+import pandas as pd  # type: ignore
 
 # simple in-memory debounce store: symbol -> last_whale_timestamp
 _debounce: Dict[str, datetime] = {}
@@ -25,10 +26,10 @@ def whale_rules(df_60min: pd.DataFrame, symbol: str) -> Dict[str, Any]:
     vol = df_60min["volume"].astype(float)
 
     # 20-day high/low on 60-min closes (assumes df_60min covers 20 trading days)
-    high_20 = close[-(20 * 6):].max() if len(close) >= 20 * 6 else close.max()
-    low_20 = close[-(20 * 6):].min() if len(close) >= 20 * 6 else close.min()
+    high_20 = close[-(20 * 6) :].max() if len(close) >= 20 * 6 else close.max()
+    low_20 = close[-(20 * 6) :].min() if len(close) >= 20 * 6 else close.min()
 
-    avg_vol = vol[-(20 * 6):].mean() if len(vol) >= 20 * 6 else vol.mean()
+    avg_vol = vol[-(20 * 6) :].mean() if len(vol) >= 20 * 6 else vol.mean()
     last_close = float(close.iloc[-1])
     last_vol = float(vol.iloc[-1])
 

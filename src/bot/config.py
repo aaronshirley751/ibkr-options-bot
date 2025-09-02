@@ -1,7 +1,9 @@
 from pathlib import Path
 from typing import Optional
-from pydantic import BaseSettings
+
 import yaml
+from pydantic import BaseSettings
+
 
 class Settings(BaseSettings):
     ibkr_host: str = "127.0.0.1"
@@ -21,5 +23,6 @@ def load_settings_from_yaml(path: str) -> Settings:
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     return Settings(**data.get("bot", {}))
+
 
 settings = Settings()
