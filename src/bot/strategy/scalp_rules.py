@@ -22,11 +22,40 @@ def scalp_signal(df: pd.DataFrame) -> Dict[str, Any]:
     """
     if df is None or len(df) < 30:
         return {"signal": "HOLD", "confidence": 0.0}
+    # Validate required columns exist
+    required_cols = {"open", "high", "low", "close", "volume"}
+    if not hasattr(df, "columns"):
+        return {"signal": "HOLD", "confidence": 0.0, "reason": "not_a_dataframe"}
+    
+    missing = required_cols - set(df.columns)
+    if missing:
+        return {
+            "signal": "HOLD",
+            "confidence": 0.0,
+            "reason": f"missing_columns: {missing}",
+        }
 
     close = df["close"].astype(float)
     high = df["high"].astype(float)
     low = df["low"].astype(float)
     vol = df["volume"].astype(float)
+    
+    # Handle NaN values
+    if close.isna().all() or high.isna().all() or low.isna().all() or vol.isna().all():
+        return {"signal": "HOLD", "confidence": 0.0, "reason": "all_nan_values"}
+    
+    # Drop NaN rows for calculations
+    close = close.dropna()
+    high = high.dropna()
+    low = low.dropna()
+    vol = vol.dropna()
+    
+    if len(close) < 30:
+        return {
+            "signal": "HOLD",
+            "confidence": 0.0,
+            "reason": f"insufficient_valid_bars: {len(close)}",
+        }
 
     # VWAP (typical price * vol) / vol
     tp = (high + low + close) / 3.0

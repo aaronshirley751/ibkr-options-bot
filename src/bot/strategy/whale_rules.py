@@ -15,18 +15,55 @@ def whale_rules(df_60min: pd.DataFrame, symbol: str) -> Dict[str, Any]:
     df_60min must contain 'close' and 'volume' columns indexed by timestamp.
     Returns: {"signal": "BUY_CALL"|"BUY_PUT"|"HOLD", "confidence": 0..1}
     """
+        # Validate input type and required columns
+        if df_60min is None:
+            return {"signal": "HOLD", "confidence": 0.0, "reason": "none_dataframe"}
+    
+        if not hasattr(df_60min, "columns"):
+            return {"signal": "HOLD", "confidence": 0.0, "reason": "not_a_dataframe"}
+    
+        required_cols = {"close", "volume"}
+        missing = required_cols - set(df_60min.columns)
+        if missing:
+            return {
+                "signal": "HOLD",
+                "confidence": 0.0,
+                "reason": f"missing_columns: {missing}",
+            }
+    
+        if len(df_60min) < 20:
+            return {
+                "signal": "HOLD",
+                "confidence": 0.0,
+                "reason": f"insufficient_bars: {len(df_60min)}",
+            }
+
     # debounce: only one whale per symbol per 3 days
     now = datetime.now(timezone.utc)
     with _debounce_lock:
         last = _debounce.get(symbol)
     if last and now - last < timedelta(days=3):
         return {"signal": "HOLD", "confidence": 0.0}
+    
 
-    if df_60min is None or len(df_60min) < 20:
-        return {"signal": "HOLD", "confidence": 0.0}
 
     close = df_60min["close"].astype(float)
     vol = df_60min["volume"].astype(float)
+    
+    # Handle NaN values
+    if close.isna().all() or vol.isna().all():
+        return {"signal": "HOLD", "confidence": 0.0, "reason": "all_nan_values"}
+    
+    # Clean NaN values
+    close = close.dropna()
+    vol = vol.dropna()
+    
+    if len(close) < 20 or len(vol) < 20:
+        return {
+            "signal": "HOLD",
+            "confidence": 0.0,
+            "reason": f"insufficient_valid_data: close={len(close)} vol={len(vol)}",
+        }
 
     # 20-day high/low on 60-min closes (assumes df_60min covers 20 trading days)
     high_20 = close[-(20 * 6) :].max() if len(close) >= 20 * 6 else close.max()
