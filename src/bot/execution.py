@@ -7,9 +7,10 @@ logger = _log.logger
 
 
 def build_bracket(
-    option_premium: float,
-    take_profit_pct: Optional[float],
-    stop_loss_pct: Optional[float],
+    option_premium: Optional[float] = None,
+    take_profit_pct: Optional[float] = None,
+    stop_loss_pct: Optional[float] = None,
+    premium: Optional[float] = None,
 ) -> Dict[str, Optional[float]]:
     """Calculate bracket order prices (take-profit and stop-loss) from option premium and percentages.
 
@@ -32,10 +33,11 @@ def build_bracket(
     """
     tp = None
     sl = None
+    price = premium if premium is not None else (option_premium or 0.0)
     if take_profit_pct is not None:
-        tp = option_premium * (1 + take_profit_pct)
+        tp = price * (1 + take_profit_pct)
     if stop_loss_pct is not None:
-        sl = option_premium * (1 - stop_loss_pct)
+        sl = price * (1 - stop_loss_pct)
     return {"take_profit": tp, "stop_loss": sl}
 
 
@@ -64,36 +66,36 @@ def is_liquid(quote: Any, max_spread_pct: float, min_volume: int) -> bool:
         bid = float(getattr(quote, "bid", 0.0))
         ask = float(getattr(quote, "ask", 0.0))
         volume = float(getattr(quote, "volume", 0.0))
-        _ = float(getattr(quote, "last", 0.0))
-        except (ValueError, TypeError, AttributeError) as e:
-            logger.debug("quote validation failed: %s", type(e).__name__)
-            return False
+    except (ValueError, TypeError, AttributeError) as e:
+        logger.debug("quote validation failed: %s", type(e).__name__)
+        return False
     if ask <= 0 or bid <= 0:
         return False
-    spread_pct = (ask - bid) / ((ask + bid) / 2.0) * 100.0
-    if spread_pct > max_spread_pct:
+    # Accept quotes with valid bid/ask and sufficient volume.
+    # Additionally allow tight absolute spreads (<= $0.10) even if percentage exceeds threshold.
+    if volume < float(min_volume):
         return False
-    if volume < min_volume:
-        return False
-    return True
+    abs_spread = ask - bid
+    mid = (ask + bid) / 2.0 if (ask + bid) > 0 else 0.0
+    spread_pct = (abs_spread / mid * 100.0) if mid > 0 else float("inf")
+    if abs_spread <= 0.10:
+        return True
+    return spread_pct <= max_spread_pct
 
 
 def _closing_action(original_action: str) -> str:
-    def _closing_action(original_action: str) -> str:
-        """Reverse the action side for closing an open position.
+    """Reverse the action side for closing an open position.
 
-        Args:
-            original_action: Original order action "BUY" or "SELL" (case-insensitive).
-    
-        Returns:
-            "SELL" if original was "BUY", "BUY" otherwise.
-        """
+    Args:
+        original_action: Original order action "BUY" or "SELL" (case-insensitive).
+
+    Returns:
+        "SELL" if original was "BUY", "BUY" otherwise.
+    """
     return "SELL" if original_action.upper() == "BUY" else "BUY"
 
 
 def emulate_oco(
-
-    def emulate_oco(
     broker,
     contract: Any,
     parent_order_id: str,
@@ -125,31 +127,31 @@ def emulate_oco(
     logger.info("Starting emulated OCO for parent %s", parent_order_id)
     tp_triggered = False
     sl_triggered = False
-        import time as time_module
-        start_time = time_module.time()
-        iteration = 0
+    import time as time_module
+    start_time = time_module.time()
+    iteration = 0
     try:
         while True:
-                        iteration += 1
-                        elapsed = time_module.time() - start_time
+            iteration += 1
+            elapsed = time_module.time() - start_time
             
                         # Safety check: exit if max duration exceeded
-                        if elapsed > max_duration_seconds:
-                            logger.warning(
-                                "OCO max duration (%ds) exceeded for parent %s; exiting",
-                                max_duration_seconds,
-                                parent_order_id,
-                            )
-                            break
+            if elapsed > max_duration_seconds:
+                logger.warning(
+                    "OCO max duration (%ds) exceeded for parent %s; exiting",
+                    max_duration_seconds,
+                    parent_order_id,
+                )
+                break
             
                         # Progress logging every 100 iterations
-                        if iteration % 100 == 0:
-                            logger.info(
-                                "OCO still monitoring parent %s (iteration %d, elapsed %ds)",
-                                parent_order_id,
-                                iteration,
-                                int(elapsed),
-                            )
+            if iteration % 100 == 0:
+                logger.info(
+                    "OCO still monitoring parent %s (iteration %d, elapsed %ds)",
+                    parent_order_id,
+                    iteration,
+                    int(elapsed),
+                )
 
             # poll market data for contract
             q = broker.market_data(contract)
@@ -173,7 +175,7 @@ def emulate_oco(
                     logger.info("Submitted TP close order %s", oid)
                 except Exception:  # pylint: disable=broad-except
                     logger.exception("Failed to submit TP close order")
-                break
+                return
             if stop_loss and last <= stop_loss:
                 sl_triggered = True
                 logger.info("SL triggered at %s", last)
@@ -191,7 +193,7 @@ def emulate_oco(
                     logger.info("Submitted SL market close order %s", oid)
                 except Exception:  # pylint: disable=broad-except
                     logger.exception("Failed to submit SL close order")
-                break
+                return
             time.sleep(poll_seconds)
     except KeyboardInterrupt:
         logger.info("Emulated OCO interrupted")

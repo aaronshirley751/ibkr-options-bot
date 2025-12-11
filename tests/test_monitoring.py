@@ -20,7 +20,7 @@ class TestHttpPost:
     @mock.patch("src.bot.monitoring.request.urlopen")
     def test_http_post_success(self, mock_urlopen):
         """Successfully sends POST request with 200 response."""
-        mock_response = mock.Mock()
+        mock_response = mock.MagicMock()
         mock_response.getcode.return_value = 200
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
@@ -33,7 +33,7 @@ class TestHttpPost:
     @mock.patch("src.bot.monitoring.request.urlopen")
     def test_http_post_success_299(self, mock_urlopen):
         """Accepts response codes 200-299."""
-        mock_response = mock.Mock()
+        mock_response = mock.MagicMock()
         mock_response.getcode.return_value = 299
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
@@ -45,7 +45,7 @@ class TestHttpPost:
     @mock.patch("src.bot.monitoring.request.urlopen")
     def test_http_post_failure_300(self, mock_urlopen):
         """Rejects response codes >= 300."""
-        mock_response = mock.Mock()
+        mock_response = mock.MagicMock()
         mock_response.getcode.return_value = 300
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
@@ -57,7 +57,7 @@ class TestHttpPost:
     @mock.patch("src.bot.monitoring.request.urlopen")
     def test_http_post_failure_500(self, mock_urlopen):
         """Rejects server error codes."""
-        mock_response = mock.Mock()
+        mock_response = mock.MagicMock()
         mock_response.getcode.return_value = 500
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
@@ -97,7 +97,7 @@ class TestHttpPost:
     @mock.patch("src.bot.monitoring.request.urlopen")
     def test_http_post_includes_headers(self, mock_urlopen, mock_request):
         """Includes custom headers in request."""
-        mock_response = mock.Mock()
+        mock_response = mock.MagicMock()
         mock_response.getcode.return_value = 200
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
@@ -112,7 +112,7 @@ class TestHttpPost:
     @mock.patch("src.bot.monitoring.request.urlopen")
     def test_http_post_json_serialization(self, mock_urlopen):
         """Properly serializes payload to JSON."""
-        mock_response = mock.Mock()
+        mock_response = mock.MagicMock()
         mock_response.getcode.return_value = 200
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
@@ -125,7 +125,7 @@ class TestHttpPost:
     @mock.patch("src.bot.monitoring.request.urlopen")
     def test_http_post_custom_timeout(self, mock_urlopen):
         """Uses custom timeout when specified."""
-        mock_response = mock.Mock()
+        mock_response = mock.MagicMock()
         mock_response.getcode.return_value = 200
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
@@ -144,7 +144,7 @@ class TestSendHeartbeat:
     @mock.patch("src.bot.monitoring.request.urlopen")
     def test_send_heartbeat_success(self, mock_urlopen):
         """Successfully sends heartbeat GET request."""
-        mock_response = mock.Mock()
+        mock_response = mock.MagicMock()
         mock_response.read.return_value = b""
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response

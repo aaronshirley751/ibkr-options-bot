@@ -26,28 +26,28 @@ def whale_rules(df_60min: pd.DataFrame, symbol: str) -> Dict[str, Any]:
     df_60min must contain 'close' and 'volume' columns indexed by timestamp.
     Returns: {"signal": "BUY_CALL"|"BUY_PUT"|"HOLD", "confidence": 0..1}
     """
-        # Validate input type and required columns
-        if df_60min is None:
-            return {"signal": "HOLD", "confidence": 0.0, "reason": "none_dataframe"}
-    
-        if not hasattr(df_60min, "columns"):
-            return {"signal": "HOLD", "confidence": 0.0, "reason": "not_a_dataframe"}
-    
-        required_cols = {"close", "volume"}
-        missing = required_cols - set(df_60min.columns)
-        if missing:
-            return {
-                "signal": "HOLD",
-                "confidence": 0.0,
-                "reason": f"missing_columns: {missing}",
-            }
-    
-        if len(df_60min) < 20:
-            return {
-                "signal": "HOLD",
-                "confidence": 0.0,
-                "reason": f"insufficient_bars: {len(df_60min)}",
-            }
+    # Validate input type and required columns
+    if df_60min is None:
+        return {"signal": "HOLD", "confidence": 0.0, "reason": "none_dataframe"}
+
+    if not hasattr(df_60min, "columns"):
+        return {"signal": "HOLD", "confidence": 0.0, "reason": "not_a_dataframe"}
+
+    required_cols = {"close", "volume"}
+    missing = required_cols - set(df_60min.columns)
+    if missing:
+        return {
+            "signal": "HOLD",
+            "confidence": 0.0,
+            "reason": f"missing_columns: {missing}",
+        }
+
+    if len(df_60min) < 20:
+        return {
+            "signal": "HOLD",
+            "confidence": 0.0,
+            "reason": f"insufficient_bars: {len(df_60min)}",
+        }
 
     # debounce: only one whale per symbol per 3 days
     now = datetime.now(timezone.utc)
@@ -56,7 +56,6 @@ def whale_rules(df_60min: pd.DataFrame, symbol: str) -> Dict[str, Any]:
     if last and now - last < timedelta(days=WHALE_DEBOUNCE_DAYS):
         return {"signal": "HOLD", "confidence": 0.0}
     
-
 
     close = df_60min["close"].astype(float)
     vol = df_60min["volume"].astype(float)

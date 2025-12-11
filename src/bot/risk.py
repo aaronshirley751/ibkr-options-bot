@@ -69,22 +69,22 @@ def guard_daily_loss(
 def stop_target_from_premium(
     premium: float, stop_pct: float, target_pct: float
 ) -> Tuple[float, float]:
-        """Calculate stop-loss and take-profit prices from option premium and percentages.
-    
-        Convenience function for computing bracket order thresholds.
-    
-        Args:
-            premium: Current option premium/price in dollars.
-            stop_pct: Stop-loss percentage below premium (e.g., 0.50 for -50%).
-            target_pct: Take-profit percentage above premium (e.g., 0.25 for +25%).
-    
-        Returns:
-            Tuple of (stop_loss_price, take_profit_price).
-        
-        Example:
-            >>> stop_target_from_premium(2.50, stop_pct=0.50, target_pct=0.25)
-            (1.25, 3.125)  # Stop at $1.25, profit at $3.125
-        """
+    """Calculate stop-loss and take-profit prices from option premium and percentages.
+
+    Convenience function for computing bracket order thresholds.
+
+    Args:
+        premium: Current option premium/price in dollars.
+        stop_pct: Stop-loss percentage below premium (e.g., 0.50 for -50%).
+        target_pct: Take-profit percentage above premium (e.g., 0.25 for +25%).
+
+    Returns:
+        Tuple of (stop_loss_price, take_profit_price).
+
+    Example:
+        >>> stop_target_from_premium(2.50, stop_pct=0.50, target_pct=0.25)
+        (1.25, 3.125)  # Stop at $1.25, profit at $3.125
+    """
     stop = premium * (1 - stop_pct)
     target = premium * (1 + target_pct)
     return stop, target
@@ -100,8 +100,7 @@ def _today_key() -> str:
 
 
 def load_equity_state(path: Path = DEFAULT_STATE_PATH) -> dict:
-    def load_equity_state(path: Path = DEFAULT_STATE_PATH) -> dict:
-        """Load daily equity state from persistent JSON file.
+    """Load daily equity state from persistent JSON file.
     
         File format: {"YYYY-MM-DD": equity_float, ...}
         Used to persist start-of-day equity across process restarts.
@@ -122,8 +121,7 @@ def load_equity_state(path: Path = DEFAULT_STATE_PATH) -> dict:
 
 
 def save_equity_state(state: dict, path: Path = DEFAULT_STATE_PATH) -> None:
-    def save_equity_state(state: dict, path: Path = DEFAULT_STATE_PATH) -> None:
-        """Save daily equity state to persistent JSON file with atomic writes.
+    """Save daily equity state to persistent JSON file with atomic writes.
     
         Uses temp file + rename pattern to avoid data corruption on crashes.
         Creates parent directories as needed.
@@ -142,21 +140,17 @@ def save_equity_state(state: dict, path: Path = DEFAULT_STATE_PATH) -> None:
 def get_start_of_day_equity(broker, path: Path = DEFAULT_STATE_PATH) -> Optional[float]:
     """Load or initialize start-of-day equity from persistent storage.
 
-    If today is not present, record current equity as start-of-day.
-        """Load or initialize start-of-day equity from persistent storage.
-    
-        Checks if today's date has a recorded start-of-day equity. If missing, queries
-        broker for current equity and saves it as the day's reference point. This allows
-        the daily loss guard to survive process restarts.
-    
-        Args:
-            broker: Broker instance with pnl() method returning dict with 'net' key.
-            path: Path to the JSON state file (default: logs/daily_state.json).
-    
-        Returns:
-            Start-of-day equity in dollars. Creates new entry if today missing.
-            Returns 0.0 if broker.pnl() fails.
-        """
+    Checks if today's date has a recorded start-of-day equity. If missing, queries
+    broker for current equity and saves it as the day's reference point. This allows
+    the daily loss guard to survive process restarts.
+
+    Args:
+        broker: Broker instance with pnl() method returning dict with 'net' key.
+        path: Path to the JSON state file (default: logs/daily_state.json).
+
+    Returns:
+        Start-of-day equity in dollars. Creates new entry if today missing.
+        Returns 0.0 if broker.pnl() fails.
     """
     state = load_equity_state(path)
     key = _today_key()
@@ -174,23 +168,8 @@ def get_start_of_day_equity(broker, path: Path = DEFAULT_STATE_PATH) -> Optional
 
 def should_stop_trading_today(
     broker, max_daily_loss_pct: float, path: Path = DEFAULT_STATE_PATH
-    """Check if daily loss limit has been exceeded, halting new position entries.
-    
-    Retrieves today's start-of-day equity, gets current broker equity, and evaluates
-    the loss percentage against the configured threshold. Used by the scheduler to
-    gate entry signal processing.
-    
-    Args:
-        broker: Broker instance with pnl() method returning dict with 'net' key.
-        max_daily_loss_pct: Maximum acceptable daily loss as percentage (e.g., 0.05 for 5%).
-        path: Path to the JSON state file (default: logs/daily_state.json).
-    
-    Returns:
-        True if daily loss >= max_daily_loss_pct (stop trading immediately).
-        False if loss below threshold or unable to calculate (error querying broker).
-    """
 ) -> bool:
-    """Return True if daily loss exceeds threshold, based on persisted start-of-day equity."""
+    """Check if daily loss limit has been exceeded, halting new entries."""
     sod = get_start_of_day_equity(broker, path)
     try:
         now = float(broker.pnl().get("net", 0.0))

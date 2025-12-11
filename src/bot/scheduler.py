@@ -119,9 +119,9 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
                 pd = importlib.import_module("pandas")  # type: ignore
                 is_df = isinstance(df1, pd.DataFrame)
-                except ImportError as e:
-                    logger.debug("pandas import failed: %s", type(e).__name__)
-                    is_df = False
+            except ImportError as e:
+                logger.debug("pandas import failed: %s", type(e).__name__)
+                is_df = False
 
             if not is_df:
                 count = len(df1) if hasattr(df1, "__len__") else 0
@@ -145,7 +145,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
             if settings.get("mode") in ("hybrid", "growth"):
                 resample = getattr(df1, "resample", None)
                 if callable(resample):
-                    res = resample("60T", label="right", closed="right")
+                    res = resample("60min", label="right", closed="right")
                     agg = getattr(res, "agg", None)
                     if callable(agg):
                         df60 = agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})  # type: ignore[call-arg]

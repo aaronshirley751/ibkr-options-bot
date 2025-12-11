@@ -17,8 +17,7 @@ EMA_WEIGHT = 0.6  # Weight of EMA gap in confidence score
 RSI_WEIGHT = 0.4  # Weight of RSI position in confidence score
 
 
-def _rsi_series(close: pd.Series, period: int = 14) -> pd.Series:
-    def _rsi_series(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
+def _rsi_series(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
     delta = close.diff()
     up = delta.clip(lower=0)
     down = -1 * delta.clip(upper=0)
@@ -79,8 +78,7 @@ def scalp_signal(df: pd.DataFrame) -> Dict[str, Any]:
     ema_fast = close.ewm(span=EMA_FAST_SPAN, adjust=False).mean().iloc[-1]
     ema_slow = close.ewm(span=EMA_SLOW_SPAN, adjust=False).mean().iloc[-1]
 
-    rsi_series = _rsi_series(close, period=14)
-        rsi_series = _rsi_series(close, period=RSI_PERIOD)
+    rsi_series = _rsi_series(close, period=RSI_PERIOD)
     rsi_val = (
         float(rsi_series.iloc[-1])
         if not rsi_series.empty and pd.notna(rsi_series.iloc[-1])
