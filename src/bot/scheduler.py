@@ -107,7 +107,8 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 # market_data may return historical bars or a snapshot Quote
                 try:
                     bars = _with_broker_lock(broker.market_data, symbol)
-                except Exception:  # pylint: disable=broad-except
+                except (ConnectionError, TimeoutError, AttributeError) as e:
+                    logger.debug("market_data failed for %s: %s", symbol, type(e).__name__)
                     bars = None
 
             df1 = _to_df(bars) if bars is not None else []
@@ -118,8 +119,9 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
                 pd = importlib.import_module("pandas")  # type: ignore
                 is_df = isinstance(df1, pd.DataFrame)
-            except Exception:  # pylint: disable=broad-except
-                is_df = False
+                except ImportError as e:
+                    logger.debug("pandas import failed: %s", type(e).__name__)
+                    is_df = False
 
             if not is_df:
                 count = len(df1) if hasattr(df1, "__len__") else 0
@@ -190,7 +192,8 @@ def run_cycle(broker, settings: Dict[str, Any]):
                         broker.market_data, getattr(opt, "symbol", opt)
                     )
                     premium = getattr(q, "last", 0.0)
-                except Exception:  # pylint: disable=broad-except
+                except (ConnectionError, TimeoutError, AttributeError, ValueError) as e:
+                    logger.debug("market_data failed for option: %s", type(e).__name__)
                     premium = 0.0
 
                 cfg_risk = settings.get("risk", {})
@@ -280,15 +283,14 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     }
                     log_trade(trade)
 
-        except Exception:  # pylint: disable=broad-except
-            err = traceback.format_exc()
-            logger.error("Error during run_cycle for %s:\n%s", symbol, err)
+        except (ConnectionError, TimeoutError, ValueError, RuntimeError) as e:
+            logger.exception("symbol processing failed: %s", type(e).__name__)
+        except Exception as e:
+            logger.exception("unexpected error during symbol processing: %s", type(e).__name__)
             try:
-                alert_all(
-                    settings, f"run_cycle error for {symbol}: see logs for details."
-                )
-            except Exception:  # pylint: disable=broad-except
-                pass
+                alert_all(settings, f"symbol processing error for {symbol}: see logs")
+            except Exception as e:
+                logger.debug("alert_all failed: %s", type(e).__name__)
 
     # concurrency: process symbols in a limited thread pool
     max_workers = int(
@@ -311,8 +313,10 @@ def run_scheduler(broker, settings: Dict[str, Any]):
                 hb = settings.get("monitoring", {}).get("heartbeat_url")
                 send_heartbeat(hb)
                 run_cycle(broker, settings)
-            except Exception:  # pylint: disable=broad-except
-                logger.exception("Scheduler cycle failed")
+            except (ConnectionError, TimeoutError, ValueError, RuntimeError) as e:
+                logger.exception("scheduler cycle failed: %s", type(e).__name__)
+            except Exception as e:
+                logger.exception("unexpected scheduler error: %s", type(e).__name__)
             last_day = now.date()
         else:
             # if we just ended a trading day, emit a simple summary placeholder

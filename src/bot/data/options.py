@@ -65,8 +65,8 @@ def pick_weekly_option(
     """
     try:
         contracts = broker.option_chain(underlying, expiry_hint="weekly")
-    except Exception:  # pylint: disable=broad-except
-        logger.exception("option_chain failed for %s", underlying)
+        except (ConnectionError, TimeoutError, AttributeError) as e:
+            logger.exception("option_chain failed for %s: %s", underlying, type(e).__name__)
         return None
     if not contracts:
         return None
@@ -95,7 +95,8 @@ def pick_weekly_option(
     for c in candidates:
         try:
             q = broker.market_data(getattr(c, "symbol", c))
-        except Exception:  # pylint: disable=broad-except
+        except (ConnectionError, TimeoutError, ValueError, AttributeError) as e:
+            logger.debug("market_data failed for contract: %s", type(e).__name__)
             continue
         bid = float(getattr(q, "bid", 0.0) or 0.0)
         ask = float(getattr(q, "ask", 0.0) or 0.0)

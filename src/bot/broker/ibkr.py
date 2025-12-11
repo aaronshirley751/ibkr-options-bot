@@ -99,8 +99,10 @@ class IBKRBroker:
         # use reqSecDefOptParams to get chain info
         try:
             chains = self.ib.reqSecDefOptParams(symbol, "SMART", "STK")
-        except Exception:
-            logger.exception("failed to fetch option chain params")
+        except (ConnectionError, TimeoutError, AttributeError) as e:
+            logger.exception(
+                "failed to fetch option chain params for %s: %s", symbol, type(e).__name__
+            )
             return []
 
         # find first chain matching underlying symbol
@@ -204,7 +206,8 @@ class IBKRBroker:
                     else ticket.contract
                 )
                 last_price = q.last
-            except Exception:
+            except (ConnectionError, TimeoutError, ValueError, AttributeError) as e:
+                logger.debug("failed to fetch last price for order: %s", type(e).__name__)
                 last_price = 0.0
 
             if ticket.take_profit_pct and last_price:
@@ -240,8 +243,8 @@ class IBKRBroker:
             # in ib_insync, placeOrder is enough; return an identifier
             oid = getattr(order, "orderId", None) or str(uuid.uuid4())
             return str(oid)
-        except Exception as e:
-            logger.exception("place_order failed: %s", e)
+        except (ConnectionError, TimeoutError, ValueError) as e:
+            logger.exception("place_order failed: %s", type(e).__name__)
             raise
 
     def cancel_order(self, order_id: str) -> None:
@@ -278,7 +281,8 @@ class IBKRBroker:
                 if v.tag == "NetLiquidation":
                     net = float(v.value)
             return {"net": net}
-        except Exception:
+        except (ConnectionError, TimeoutError, ValueError) as e:
+            logger.exception("failed to fetch PnL: %s", type(e).__name__)
             return {"net": 0.0}
 
     def account(self) -> Dict[str, Any]:
@@ -287,7 +291,8 @@ class IBKRBroker:
         try:
             summary = self.ib.accountSummary()
             return {f"{s.tag}": s.value for s in summary}
-        except Exception:
+        except (ConnectionError, TimeoutError, ValueError) as e:
+            logger.exception("failed to fetch account summary: %s", type(e).__name__)
             return {}
 
     def historical_prices(
@@ -356,8 +361,8 @@ class IBKRBroker:
         try:
             if self.ib and self.ib.isConnected():
                 self.ib.disconnect()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("error during disconnect: %s", type(e).__name__)
 
     def __enter__(self):
         self.connect()

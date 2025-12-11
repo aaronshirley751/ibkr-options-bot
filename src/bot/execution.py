@@ -28,8 +28,9 @@ def is_liquid(quote: Any, max_spread_pct: float, min_volume: int) -> bool:
         ask = float(getattr(quote, "ask", 0.0))
         volume = float(getattr(quote, "volume", 0.0))
         _ = float(getattr(quote, "last", 0.0))
-    except Exception:  # pylint: disable=broad-except
-        return False
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.debug("quote validation failed: %s", type(e).__name__)
+            return False
     if ask <= 0 or bid <= 0:
         return False
     spread_pct = (ask - bid) / ((ask + bid) / 2.0) * 100.0
