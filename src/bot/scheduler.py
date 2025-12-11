@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date as ddate
 from datetime import datetime
 from datetime import time as dtime
+from datetime import timezone
 from threading import Lock
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
@@ -60,6 +61,7 @@ def _to_df(bars_iter) -> Any:
 
 
 _LOSS_ALERTED_DATE: Dict[str, Optional[ddate]] = {"date": None}
+_loss_alert_lock = Lock()
 
 
 def run_cycle(broker, settings: Dict[str, Any]):
@@ -85,16 +87,17 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 logger.warning("Daily loss guard active; skipping new positions")
                 # Alert once per trading day
                 ny = (
-                    datetime.utcnow()
+                    datetime.now(timezone.utc)
                     .replace(tzinfo=ZoneInfo("UTC"))
                     .astimezone(ZoneInfo("America/New_York"))
                 )
-                if _LOSS_ALERTED_DATE["date"] != ny.date():
-                    alert_all(
-                        settings,
-                        f"Daily loss limit breached. Pausing new entries for {ny.date()}.",
-                    )
-                    _LOSS_ALERTED_DATE["date"] = ny.date()
+                with _loss_alert_lock:
+                    if _LOSS_ALERTED_DATE["date"] != ny.date():
+                        alert_all(
+                            settings,
+                            f"Daily loss limit breached. Pausing new entries for {ny.date()}.",
+                        )
+                        _LOSS_ALERTED_DATE["date"] = ny.date()
                 return
             # fetch recent 1-min bars; try multiple broker methods
             bars = None
@@ -266,7 +269,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 # log trade
                 if not settings.get("dry_run"):
                     trade = {
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "symbol": symbol,
                         "action": ticket.action,
                         "quantity": size,
@@ -301,7 +304,7 @@ def run_scheduler(broker, settings: Dict[str, Any]):
     interval_seconds = settings.get("schedule", {}).get("interval_seconds", 180)
     last_day = None
     while True:
-        now = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
+        now = datetime.now(timezone.utc).replace(tzinfo=ZoneInfo("UTC"))
         if is_rth(now):
             try:
                 # Heartbeat at start of each active cycle

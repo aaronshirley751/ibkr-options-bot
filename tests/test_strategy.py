@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -7,7 +7,7 @@ from src.bot.strategy.whale_rules import whale_rules
 
 
 def _make_bars(n=60, start=None, base=100.0):
-    start = start or datetime.utcnow()
+    start = start or datetime.now(timezone.utc)
     idx = pd.date_range(end=start, periods=n, freq="1min")
     close = pd.Series([base + i * 0.01 for i in range(n)], index=idx)
     high = close + 0.05
@@ -31,7 +31,7 @@ def test_scalp_signal_has_keys():
 
 def _make_60m_bars(days=20, base=100.0):
     n = days * 6
-    idx = pd.date_range(end=datetime.utcnow(), periods=n, freq="60min")
+    idx = pd.date_range(end=datetime.now(timezone.utc), periods=n, freq="60min")
     close = pd.Series([base + (i % 6) * 0.5 for i in range(n)], index=idx)
     vol = pd.Series([1000 + (i % 6) * 100 for i in range(n)], index=idx)
     return pd.DataFrame({"close": close, "volume": vol})

@@ -1,10 +1,12 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from threading import Lock
 from typing import Any, Dict
 
 import pandas as pd  # type: ignore
 
 # simple in-memory debounce store: symbol -> last_whale_timestamp
 _debounce: Dict[str, datetime] = {}
+_debounce_lock = Lock()
 
 
 def whale_rules(df_60min: pd.DataFrame, symbol: str) -> Dict[str, Any]:
@@ -14,8 +16,9 @@ def whale_rules(df_60min: pd.DataFrame, symbol: str) -> Dict[str, Any]:
     Returns: {"signal": "BUY_CALL"|"BUY_PUT"|"HOLD", "confidence": 0..1}
     """
     # debounce: only one whale per symbol per 3 days
-    now = datetime.utcnow()
-    last = _debounce.get(symbol)
+    now = datetime.now(timezone.utc)
+    with _debounce_lock:
+        last = _debounce.get(symbol)
     if last and now - last < timedelta(days=3):
         return {"signal": "HOLD", "confidence": 0.0}
 
@@ -51,6 +54,7 @@ def whale_rules(df_60min: pd.DataFrame, symbol: str) -> Dict[str, Any]:
         confidence = min(1.0, 0.6 * min(1.0, strength * 5) + 0.4 * vol_score)
 
     if signal != "HOLD":
-        _debounce[symbol] = now
+        with _debounce_lock:
+            _debounce[symbol] = now
 
     return {"signal": signal, "confidence": round(float(confidence), 3)}

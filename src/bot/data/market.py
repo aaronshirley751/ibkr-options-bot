@@ -1,4 +1,4 @@
-from bot.broker.base import Broker
+from ..broker.base import Broker
 
 
 def historical_prices(broker: Broker, symbol: str, minutes: int = 60):

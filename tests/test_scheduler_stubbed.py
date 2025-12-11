@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -62,7 +62,7 @@ class StubBroker:
         self, symbol: str, duration: str = "60 M", bar_size: str = "1 min", **_
     ):
         # Return a simple 1-min OHLCV increasing trend
-        idx = pd.date_range(end=datetime.utcnow(), periods=60, freq="1min")
+        idx = pd.date_range(end=datetime.now(timezone.utc), periods=60, freq="1min")
         close = pd.Series([100 + i * 0.01 for i in range(60)], index=idx)
         high = close + 0.05
         low = close - 0.05

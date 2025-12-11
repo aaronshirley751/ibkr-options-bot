@@ -1,7 +1,7 @@
 import os
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -118,13 +118,13 @@ class IBKRBroker:
 
         # pick expiry: next Friday for weekly
         if expiry_hint == "weekly":
-            expiry = _next_friday_date(datetime.utcnow())
+            expiry = _next_friday_date(datetime.now(timezone.utc))
             # if expiry not in expirations, choose the nearest future
             if expiry not in expirations:
                 expiry = min(
                     expirations,
                     key=lambda d: abs(
-                        datetime.strptime(d, "%Y%m%d").date() - datetime.utcnow().date()
+                        datetime.strptime(d, "%Y%m%d").date() - datetime.now(timezone.utc).date()
                     ),
                 )
         else:
