@@ -11,7 +11,25 @@ def build_bracket(
     take_profit_pct: Optional[float],
     stop_loss_pct: Optional[float],
 ) -> Dict[str, Optional[float]]:
-    """Return limit and stop prices for an option given premium and pct targets."""
+    """Calculate bracket order prices (take-profit and stop-loss) from option premium and percentages.
+
+    Given an option's current premium and target profit/loss percentages, returns the
+    exact price levels at which to execute take-profit (limit) and stop-loss orders.
+    
+    Args:
+        option_premium: Current market price of the option (bid-ask midpoint or last trade).
+        take_profit_pct: Target profit percentage (e.g., 0.25 for +25%). None if no TP desired.
+        stop_loss_pct: Target loss percentage (e.g., 0.10 for -10%). None if no SL desired.
+    
+    Returns:
+        Dictionary with keys:
+        - 'take_profit': Price to place take-profit limit order, or None if not desired.
+        - 'stop_loss': Price to place stop-loss limit order, or None if not desired.
+        
+    Example:
+        >>> build_bracket(option_premium=2.50, take_profit_pct=0.40, stop_loss_pct=0.50)
+        {'take_profit': 3.5, 'stop_loss': 1.25}
+    """
     tp = None
     sl = None
     if take_profit_pct is not None:
@@ -22,7 +40,26 @@ def build_bracket(
 
 
 def is_liquid(quote: Any, max_spread_pct: float, min_volume: int) -> bool:
-    # quote: object with bid, ask, last, and maybe volume
+    """Check if an option's bid-ask spread and volume meet liquidity thresholds.
+    
+    Validates that quote data is available and meets minimum trading standards:
+    - Bid/ask spread does not exceed max_spread_pct of mid-price
+    - Volume exceeds min_volume threshold
+    
+    Args:
+        quote: Market quote object with attributes: bid (float), ask (float), 
+               last (float), volume (int/float). Can be any object supporting getattr.
+        max_spread_pct: Maximum acceptable bid-ask spread as percentage of mid-price
+                        (e.g., 2.0 for 2%).
+        min_volume: Minimum acceptable trading volume per contract unit.
+    
+    Returns:
+        True if quote data is valid and meets liquidity requirements, False otherwise.
+        Returns False on any conversion/validation error (missing attributes, NaN, etc.).
+    
+    Raises:
+        No exceptions raised; errors logged at debug level and return False.
+    """
     try:
         bid = float(getattr(quote, "bid", 0.0))
         ask = float(getattr(quote, "ask", 0.0))
@@ -42,10 +79,21 @@ def is_liquid(quote: Any, max_spread_pct: float, min_volume: int) -> bool:
 
 
 def _closing_action(original_action: str) -> str:
+    def _closing_action(original_action: str) -> str:
+        """Reverse the action side for closing an open position.
+
+        Args:
+            original_action: Original order action "BUY" or "SELL" (case-insensitive).
+    
+        Returns:
+            "SELL" if original was "BUY", "BUY" otherwise.
+        """
     return "SELL" if original_action.upper() == "BUY" else "BUY"
 
 
 def emulate_oco(
+
+    def emulate_oco(
     broker,
     contract: Any,
     parent_order_id: str,
