@@ -130,11 +130,20 @@ def save_equity_state(state: dict, path: Path = DEFAULT_STATE_PATH) -> None:
             state: Dictionary mapping date strings to equity float values.
             path: Path to the JSON state file (default: logs/daily_state.json).
         """
+    import os
+    import uuid
+    
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(state, f)
-    tmp.replace(path)
+    # Use unique temp file to prevent race conditions
+    tmp = path.with_suffix(f".tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
+    try:
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(state, f)
+        tmp.replace(path)
+    finally:
+        # Clean up temp file if replace failed
+        if tmp.exists():
+            tmp.unlink()
 
 
 def get_start_of_day_equity(broker, path: Path = DEFAULT_STATE_PATH) -> Optional[float]:

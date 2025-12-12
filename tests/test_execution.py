@@ -282,3 +282,33 @@ class TestEmulateOCO:
         call_args = broker.place_order.call_args[0][0]
         assert call_args.action == "BUY"
         assert call_args.quantity == 2
+
+    def test_emulate_oco_max_duration_exit(self):
+        """Emulation exits when max_duration_seconds is exceeded."""
+        broker = Mock()
+        contract = Mock(symbol="SPY")
+        
+        # Price never hits TP or SL
+        broker.market_data = Mock(return_value=Mock(last=2.50))
+        
+        import time
+        start = time.time()
+        
+        with patch('src.bot.execution.logger') as mock_logger:
+            emulate_oco(
+                broker,
+                contract,
+                parent_order_id="PARENT_DUR",
+                take_profit=5.0,  # Never reached
+                stop_loss=1.0,    # Never reached
+                poll_seconds=0.01,
+                side="BUY",
+                quantity=1,
+                max_duration_seconds=0.1,  # Very short duration for test
+            )
+        
+        elapsed = time.time() - start
+        # Should exit due to max_duration, not hang forever
+        assert elapsed < 1.0  # Should exit quickly
+        # Verify warning was logged
+        assert any("max duration" in str(call).lower() for call in mock_logger.warning.call_args_list)

@@ -58,9 +58,39 @@ def notify_telegram(
         logger.debug("Telegram notification failed")
 
 
+def notify_discord(webhook_url: Optional[str], message: str, username: str = "IBKR Bot") -> None:
+    """Send notification to Discord channel via webhook.
+    
+    Args:
+        webhook_url: Discord webhook URL (from channel settings > Integrations > Webhooks)
+        message: Message text to send
+        username: Bot username to display (default: "IBKR Bot")
+    """
+    if not webhook_url:
+        return
+    
+    # Discord webhook payload format
+    payload = {
+        "content": message,
+        "username": username,
+    }
+    
+    ok = _http_post(webhook_url, payload)
+    if not ok:
+        logger.debug("Discord notification failed")
+
+
 def alert_all(settings: dict, message: str) -> None:
+    """Send alert to all configured notification channels."""
     mon = settings.get("monitoring", {})
     if not mon or mon.get("alerts_enabled") is False:
         return
+    
+    # Discord (primary)
+    notify_discord(mon.get("discord_webhook_url"), message)
+    
+    # Slack (legacy support)
     notify_slack(mon.get("slack_webhook_url"), message)
+    
+    # Telegram (legacy support)
     notify_telegram(mon.get("telegram_bot_token"), mon.get("telegram_chat_id"), message)

@@ -4,16 +4,18 @@ broker:
   client_id: 101
   read_only: false
 
+# Phase 1 Pi-optimized settings: Start conservative, scale up after baseline established
 symbols:
-  - "SPY"
-  - "QQQ"
+  - "SPY"  # Single symbol for baseline validation
 
 mode: "growth"  # growth | hybrid
-dry_run: false
+# CRITICAL: Keep true until paper trading validated (Phase 1 deployment safety)
+dry_run: true  # true = paper trading (no real orders), false = live trading
 
 schedule:
-  interval_seconds: 180
-  max_concurrent_symbols: 2
+  interval_seconds: 300  # 5 minutes - reduces load on Pi hardware
+  max_concurrent_symbols: 1  # Single-threaded for Pi stability
+  # NOTE: After baseline established, consider interval_seconds: 180, max_concurrent_symbols: 2
 
 risk:
   max_risk_pct_per_trade: 0.10
@@ -34,7 +36,8 @@ journal:
 
 monitoring:
   alerts_enabled: true
-  heartbeat_url: ""      # e.g., https://hc-ping.com/<uuid>
-  slack_webhook_url: ""  # optional: Slack Incoming Webhook URL
-  telegram_bot_token: "" # optional: Telegram bot token
-  telegram_chat_id: ""   # optional: Telegram chat id
+  heartbeat_url: ""          # e.g., https://hc-ping.com/<uuid>
+  discord_webhook_url: ""    # Primary: Discord webhook (Server Settings > Integrations > Webhooks > Copy URL)
+  slack_webhook_url: ""      # Optional: Slack Incoming Webhook URL
+  telegram_bot_token: ""     # Optional: Telegram bot token
+  telegram_chat_id: ""       # Optional: Telegram chat id

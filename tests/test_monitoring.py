@@ -289,16 +289,65 @@ class TestNotifyTelegram:
         assert "sendMessage" in url
 
 
+class TestNotifyDiscord:
+    """Test Discord notifications."""
+
+    @mock.patch("src.bot.monitoring._http_post")
+    def test_notify_discord_success(self, mock_http_post):
+        """Successfully sends Discord message."""
+        mock_http_post.return_value = True
+
+        from src.bot.monitoring import notify_discord
+        notify_discord("https://discord.com/api/webhooks/123/abc", "Test message")
+
+        mock_http_post.assert_called_once()
+        call_args = mock_http_post.call_args
+        assert "discord.com" in call_args[0][0]
+        assert call_args[0][1]["content"] == "Test message"
+        assert call_args[0][1]["username"] == "IBKR Bot"
+
+    @mock.patch("src.bot.monitoring._http_post")
+    def test_notify_discord_custom_username(self, mock_http_post):
+        """Uses custom username when provided."""
+        mock_http_post.return_value = True
+
+        from src.bot.monitoring import notify_discord
+        notify_discord("https://discord.com/api/webhooks/123/abc", "Test", username="Trading Bot")
+
+        call_args = mock_http_post.call_args
+        assert call_args[0][1]["username"] == "Trading Bot"
+
+    def test_notify_discord_none_webhook(self):
+        """Skips if webhook URL is None."""
+        from src.bot.monitoring import notify_discord
+        notify_discord(None, "Test message")  # Should not raise
+
+    def test_notify_discord_empty_webhook(self):
+        """Skips if webhook URL is empty."""
+        from src.bot.monitoring import notify_discord
+        notify_discord("", "Test message")  # Should not raise
+
+    @mock.patch("src.bot.monitoring._http_post")
+    def test_notify_discord_failure_graceful(self, mock_http_post):
+        """Handles notification failure gracefully."""
+        mock_http_post.return_value = False
+
+        from src.bot.monitoring import notify_discord
+        notify_discord("https://discord.com/api/webhooks/123/abc", "Test")  # Should not raise
+
+
 class TestAlertAll:
     """Test combined alerting."""
 
+    @mock.patch("src.bot.monitoring.notify_discord")
     @mock.patch("src.bot.monitoring.notify_slack")
     @mock.patch("src.bot.monitoring.notify_telegram")
-    def test_alert_all_sends_both(self, mock_telegram, mock_slack):
-        """Sends to both Slack and Telegram when configured."""
+    def test_alert_all_sends_all(self, mock_telegram, mock_slack, mock_discord):
+        """Sends to Discord, Slack, and Telegram when configured."""
         settings = {
             "monitoring": {
                 "alerts_enabled": True,
+                "discord_webhook_url": "https://discord.com/api/webhooks/123/abc",
                 "slack_webhook_url": "https://hooks.slack.com/xxx",
                 "telegram_bot_token": "123:ABC",
                 "telegram_chat_id": "456",
@@ -307,35 +356,59 @@ class TestAlertAll:
 
         alert_all(settings, "Alert message")
 
+        mock_discord.assert_called_once_with("https://discord.com/api/webhooks/123/abc", "Alert message")
         mock_slack.assert_called_once()
         mock_telegram.assert_called_once()
 
+    @mock.patch("src.bot.monitoring.notify_discord")
     @mock.patch("src.bot.monitoring.notify_slack")
     @mock.patch("src.bot.monitoring.notify_telegram")
-    def test_alert_all_alerts_disabled(self, mock_telegram, mock_slack):
+    def test_alert_all_discord_only(self, mock_telegram, mock_slack, mock_discord):
+        """Sends only Discord when others not configured."""
+        settings = {
+            "monitoring": {
+                "alerts_enabled": True,
+                "discord_webhook_url": "https://discord.com/api/webhooks/123/abc",
+            }
+        }
+
+        alert_all(settings, "Alert message")
+
+        mock_discord.assert_called_once()
+        mock_slack.assert_called_once_with(None, "Alert message")
+        mock_telegram.assert_called_once()
+
+    @mock.patch("src.bot.monitoring.notify_discord")
+    @mock.patch("src.bot.monitoring.notify_slack")
+    @mock.patch("src.bot.monitoring.notify_telegram")
+    def test_alert_all_alerts_disabled(self, mock_telegram, mock_slack, mock_discord):
         """Skips all alerts when disabled."""
         settings = {"monitoring": {"alerts_enabled": False}}
 
         alert_all(settings, "Alert message")
 
+        mock_discord.assert_not_called()
         mock_slack.assert_not_called()
         mock_telegram.assert_not_called()
 
+    @mock.patch("src.bot.monitoring.notify_discord")
     @mock.patch("src.bot.monitoring.notify_slack")
     @mock.patch("src.bot.monitoring.notify_telegram")
-    def test_alert_all_no_monitoring_config(self, mock_telegram, mock_slack):
+    def test_alert_all_no_monitoring_config(self, mock_telegram, mock_slack, mock_discord):
         """Skips alerts if monitoring not configured."""
         settings = {}
 
         alert_all(settings, "Alert message")
 
+        mock_discord.assert_not_called()
         mock_slack.assert_not_called()
         mock_telegram.assert_not_called()
 
+    @mock.patch("src.bot.monitoring.notify_discord")
     @mock.patch("src.bot.monitoring.notify_slack")
     @mock.patch("src.bot.monitoring.notify_telegram")
-    def test_alert_all_slack_only(self, mock_telegram, mock_slack):
-        """Sends only Slack when Telegram not configured."""
+    def test_alert_all_slack_only(self, mock_telegram, mock_slack, mock_discord):
+        """Sends only Slack when Telegram and Discord not configured."""
         settings = {
             "monitoring": {
                 "alerts_enabled": True,

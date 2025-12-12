@@ -46,6 +46,7 @@ class OptionsSettings(BaseModel):
 class MonitoringSettings(BaseModel):
     alerts_enabled: bool = Field(default=True)
     heartbeat_url: Optional[str] = Field(default=None)
+    discord_webhook_url: Optional[str] = Field(default=None)  # Primary alerting
     slack_webhook_url: Optional[str] = Field(default=None)
     telegram_bot_token: Optional[str] = Field(default=None)
     telegram_chat_id: Optional[str] = Field(default=None)

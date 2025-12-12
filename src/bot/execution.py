@@ -135,7 +135,7 @@ def emulate_oco(
             iteration += 1
             elapsed = time_module.time() - start_time
             
-                        # Safety check: exit if max duration exceeded
+            # Safety check: exit if max duration exceeded
             if elapsed > max_duration_seconds:
                 logger.warning(
                     "OCO max duration (%ds) exceeded for parent %s; exiting",
@@ -144,7 +144,7 @@ def emulate_oco(
                 )
                 break
             
-                        # Progress logging every 100 iterations
+            # Progress logging every 100 iterations
             if iteration % 100 == 0:
                 logger.info(
                     "OCO still monitoring parent %s (iteration %d, elapsed %ds)",
