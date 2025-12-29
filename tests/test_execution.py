@@ -290,25 +290,25 @@ class TestEmulateOCO:
         
         # Price never hits TP or SL
         broker.market_data = Mock(return_value=Mock(last=2.50))
-        
-        import time
-        start = time.time()
-        
-        with patch('src.bot.execution.logger') as mock_logger:
+
+        # Mock time progression to avoid timing flakiness
+        with patch('src.bot.execution.time') as mock_time_module, \
+             patch('src.bot.execution.logger') as mock_logger:
+            mock_time_module.sleep = Mock()
+            # Simulate time advancing past max_duration on 4th call
+            mock_time_module.time = Mock(side_effect=[0, 1, 2, 1000])
+
             emulate_oco(
                 broker,
                 contract,
                 parent_order_id="PARENT_DUR",
-                take_profit=5.0,  # Never reached
-                stop_loss=1.0,    # Never reached
-                poll_seconds=0.01,
+                take_profit=5.0,
+                stop_loss=1.0,
+                poll_seconds=1,
                 side="BUY",
                 quantity=1,
-                max_duration_seconds=0.1,  # Very short duration for test
+                max_duration_seconds=10,
             )
-        
-        elapsed = time.time() - start
-        # Should exit due to max_duration, not hang forever
-        assert elapsed < 1.0  # Should exit quickly
-        # Verify warning was logged
+
+        # Verify warning was logged about max duration
         assert any("max duration" in str(call).lower() for call in mock_logger.warning.call_args_list)

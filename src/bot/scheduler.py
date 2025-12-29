@@ -79,6 +79,20 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
     def process_symbol(symbol: str):
         try:
+            # Ensure broker is connected before processing
+            if hasattr(broker, "is_connected") and callable(getattr(broker, "is_connected")):
+                if not broker.is_connected():
+                    logger.warning("Broker disconnected; attempting reconnection for %s", symbol)
+                    try:
+                        broker.connect()
+                        logger.info("Broker reconnected successfully")
+                    except Exception as conn_err:  # pylint: disable=broad-except
+                        logger.error(
+                            "Failed to reconnect broker: %s: %s",
+                            type(conn_err).__name__,
+                            str(conn_err),
+                        )
+                        return
             # Check daily loss guard once per cycle; if triggered, skip new entries
             loss_guard = should_stop_trading_today(
                 broker, settings.get("risk", {}).get("max_daily_loss_pct", 0.15)

@@ -1,18 +1,16 @@
 version: "3.8"
 services:
   gateway:
-    image: ghcr.io/gyrasol/ibkr-gateway:latest
+    image: ghcr.io/gnzsnz/ib-gateway:latest
     container_name: ibkr-gateway
     environment:
-      - TWSUSER=${IBKR_USERNAME}
-      - TWSPASSWORD=${IBKR_PASSWORD}
-      - PAPER=true
-      - FIX=false
-      - VNC=false
+      - TWS_USERID=${IBKR_USERNAME}
+      - TWS_PASSWORD=${IBKR_PASSWORD}
       - TRADING_MODE=paper
-      - TWS_MAJOR_VRSN=1015
-      - TZ=${TZ:-UTC}
+      - READ_ONLY_API=no
+      - TZ=${TZ:-America/New_York}
     ports:
       - "4002:4002"
+      - "5900:5900"
     restart: unless-stopped
     

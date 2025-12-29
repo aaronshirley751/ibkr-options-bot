@@ -4,80 +4,416 @@ Lightweight scaffold for an IBKR options trading bot.
 
 Structure and goals are in the repository root. This project is a starting point and intentionally minimal — add credentials to `.env` and tune `configs/settings.yaml` before running.
 
-## 🚀 Start Here for Next Session
+---
 
-### Current Status Summary
-- ✅ **Local Development Environment**: Python 3.12.10 installed, all dependencies ready, 7/7 tests passing
-- ✅ **Code Quality**: Comprehensive test suite with 27% coverage, linting tools configured
-- ✅ **AI Guidance**: Updated `.github/copilot-instructions.md` with comprehensive patterns and conventions
-- ⏳ **Pi Gateway**: Alternative Docker configurations prepared, authentication scripts ready
-- ⏳ **End-to-End Testing**: Awaiting Gateway resolution for connectivity validation
+## 🚀 **START HERE NEXT SESSION 12/29/2025**
 
-### Immediate Priorities
+### **Session 12/29/2025 Summary: Raspberry Pi Deployment Phase 1 (COMPLETED 8 of 16 steps)**
 
-#### PRIORITY 1: Pi Gateway Resolution
-**Current Blocker**: Docker image access for IBKR Gateway deployment
-**Ready Solutions**:
-- `scripts/test_gateway_options.sh` - Test all Docker alternatives automatically
-- `docker-compose.gateway-vnexus.yml` - VNC-based Gateway with authentication
-- `docker-compose.gateway-uaf.yml` - UAF Gateway alternative
-- `docs/GATEWAY_AUTH_INSTRUCTIONS.md` - Step-by-step authentication guide
+**Session Goal**: Deploy IBKR options trading bot on Raspberry Pi 4 for paper trading validation with IBKR Gateway connectivity.
 
-**Next Actions**:
-1. Run `bash scripts/test_gateway_options.sh` on Pi to test all alternatives
-2. If successful: `make ibkr-test` for connectivity validation
-3. If blocked: Follow manual Gateway installation from `docs/IBKR_SETUP.md`
+**Session Duration**: Full deployment session from OS flashing through Gateway troubleshooting  
+**Pi Hardware**: Raspberry Pi 4, hostname "Jeremiah", IP 192.168.7.117  
+**User Environment**: SSH from Windows machine (saladbar751@Jeremiah)
 
-#### PRIORITY 2: Local Development Ready
-**Current Status**: ✅ Fully functional
-**Testing Commands**:
-```bash
-# Run all tests (7/7 passing)
-pytest tests/ -v
+---
 
-# Run with coverage (27% current)
-pytest tests/ --cov=src/bot --cov-report=term-missing
+### **✅ COMPLETED STEPS (1-8 of 16)**
 
-# Code quality
-ruff check src tests && black src tests
+1. ✅ **OS Flashed**: 64-bit Raspberry Pi OS (Debian Trixie) successfully installed via Raspberry Pi Imager with SSH pre-enabled
+2. ✅ **Pi Booted**: System accessible at 192.168.7.117, hostname configured as "Jeremiah"
+3. ✅ **SSH Configured**: Password authentication working, custom username "saladbar751" (not default "pi")
+4. ✅ **Python Installed**: Python 3.11.9 via pyenv (system had Python 3.13.5 on Trixie, needed 3.11 for bot compatibility)
+5. ✅ **Repository Cloned**: Bot source at `~/ibkr-options-bot` from GitHub
+6. ✅ **Dependencies Installed**: All packages installed in Python 3.11.9 venv except pandas-ta (removed as unused)
+7. ✅ **Environment Configured**: `.env` file created with IBKR credentials, secured with chmod 600
+8. ✅ **Docker Installed**: Docker Engine 29.1.3 + Compose plugin installed via convenience script
+
+---
+
+### **⚠️ CRITICAL BLOCKER: Gateway Deployment (Step 9)**
+
+**Status**: All tested Docker images fail with "Offline TWS/Gateway version 1015 not installed: can't find jars folder"
+
+**Images Tested**:
+- `ghcr.io/gyrasol/ibkr-gateway:latest` - 404 not found (private repository)
+- `ghcr.io/gnzsnz/ib-gateway:latest` - Container crash loop (jars folder missing)
+- `ghcr.io/gnzsnz/ib-gateway:stable` - Container crash loop (same error)
+
+**Error Pattern**:
+```
+Starting IBC in paper mode, with params: Version: 1015
+Error: Offline TWS/Gateway version 1015 not installed: can't find jars folder
 ```
 
-#### PRIORITY 3: Production Readiness
-**Next Development Steps**:
-- Increase test coverage (current: 27%, target: 60%+)
-- Add broker protocol integration tests
-- Implement end-to-end paper trading validation
-- Performance testing with concurrent symbols
+Container enters restart loop: Xvfb starts → IBC initializes → Gateway check fails → container exits → Docker restarts
 
-### Quick Commands
-
-#### Local Testing
-```bash
-# Development environment ready
-pytest tests/ -v                    # All tests (7/7 passing)
-python -m src.bot.app               # Run bot locally (stub broker)
-make test                          # Full test suite
+**Current Docker Compose Configuration** (on Pi):
+```yaml
+# docker-compose.gateway.yml
+version: "3.8"
+services:
+  gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable  # Changed from :latest via sed
+    container_name: ibkr-gateway
+    environment:
+      - TWS_USERID=${IBKR_USERNAME}
+      - TWS_PASSWORD=${IBKR_PASSWORD}
+      - TRADING_MODE=paper
+      - READ_ONLY_API=no
+      - TZ=${TZ:-America/New_York}
+    ports:
+      - "4002:4002"
+      - "5900:5900"
+    restart: unless-stopped
 ```
 
-#### Pi Deployment
+**Pi Environment State**:
 ```bash
-# On Pi - test Gateway options
-bash scripts/test_gateway_options.sh
-
-# If Gateway working
-make ibkr-test                     # Test IBKR connectivity
-make run                          # Production deployment
+# Location: ~/ibkr-options-bot
+# Python: .venv with Python 3.11.9 (pyenv)
+# Docker: Logged into ghcr.io with GitHub PAT (read:packages scope)
+# .env: IBKR credentials configured for paper trading port 4002
+# Repository: Local modifications (requirements.txt, docker-compose.gateway.yml)
 ```
 
-#### Development Workflow
+---
+
+### **🔥 IMMEDIATE NEXT STEPS (Resume Here)**
+
+**Option A: Try Different Docker Image** (15-30 minutes)
 ```bash
-# Code quality (already configured)
-ruff check --fix src tests        # Auto-fix linting
-black src tests                   # Format code
-mypy src tests                    # Type checking
+# SSH into Pi
+ssh saladbar751@192.168.7.117
+cd ~/ibkr-options-bot
+
+# Stop broken container first
+docker compose -f docker-compose.gateway.yml down
+
+# Try universal app factory image
+sed -i 's|ghcr.io/gnzsnz/ib-gateway:stable|universalappfactory/ib-gateway:latest|g' docker-compose.gateway.yml
+docker compose -f docker-compose.gateway.yml up -d
+docker compose -f docker-compose.gateway.yml logs -f  # Monitor startup
+
+# If successful, test connectivity
+make ibkr-test
 ```
 
-### Architecture Overview
+**Option B: Manual Gateway Install (RECOMMENDED)** (45-60 minutes)
+Most reliable path based on Docker image failures. Install IB Gateway directly without containers:
+
+```bash
+# Install Java prerequisites
+sudo apt-get update
+sudo apt-get install -y default-jre xvfb
+
+# Download IBKR Gateway installer (Linux 64-bit)
+wget https://download2.interactivebrokers.com/installers/ibgateway/stable-standalone/ibgateway-stable-standalone-linux-x64.sh
+chmod +x ibgateway-stable-standalone-linux-x64.sh
+
+# Run installer (requires GUI for first-time setup)
+./ibgateway-stable-standalone-linux-x64.sh
+# Follow wizard, default location: ~/Jts/ibgateway
+
+# Configure Gateway via GUI:
+# - Enable API, port 4002
+# - Allow localhost connections
+# - Disable Read-Only API (to allow order placement)
+# - Save settings
+
+# Create startup script
+cat > ~/start_gateway.sh << 'EOF'
+#!/bin/bash
+cd ~/Jts/ibgateway
+./ibgateway &
+sleep 30
+nc -zv localhost 4002 && echo "Gateway started" || echo "Gateway failed"
+EOF
+chmod +x ~/start_gateway.sh
+
+# Update .env (should already be correct)
+# IBKR_HOST=127.0.0.1
+# IBKR_PORT=4002
+
+# Test connection
+cd ~/ibkr-options-bot
+source .venv/bin/activate
+python test_ibkr_connection.py --host 127.0.0.1 --port 4002 --timeout 10
+```
+
+**Option C: Build Custom Gateway Image** (60-90 minutes)
+Only if Options A/B fail. Create Dockerfile that properly packages Gateway binaries with IBC wrapper.
+
+---
+
+### **📋 REMAINING DEPLOYMENT STEPS (10-16)**
+
+**After Gateway Resolution**:
+- **Step 10**: Deploy IBKR Gateway container on Pi - Verify port 4002 listening with `ss -tln | grep 4002`
+- **Step 11**: Test IBKR connectivity from Pi - Run `make ibkr-test`, confirm SPY quote fetch succeeds
+- **Step 12**: Run bot with dry_run=true - Execute `python -m src.bot.app`, monitor logs for 1-2 cycles
+- **Step 13**: Test Discord alerts (if configured) - Trigger sample alert, verify message in Discord channel
+- **Step 14**: Create Pi deployment runbook - Document exact commands from steps 1-16 for future deploys
+- **Step 15**: Optional: Test bracket order creation - Run `make ibkr-test-whatif`, verify TP/SL placement
+- **Step 16**: Final: Document results and next steps - Update QA findings, determine live trading readiness
+
+---
+
+### **🐛 SESSION CHALLENGES & RESOLUTIONS**
+
+**Challenge 1**: SSH Authentication Failure
+- **Error**: "Permission denied (publickey,password)" with username "pi"
+- **Root Cause**: Raspberry Pi Imager custom username "saladbar751" overrode default "pi"
+- **Resolution**: Used correct username from Imager configuration
+- **Learning**: Imager custom username replaces Pi OS default account
+
+**Challenge 2**: Python 3.11 Unavailable in Debian Trixie
+- **Error**: `apt-get install python3.11` failed with "Unable to locate package"
+- **Root Cause**: Debian Trixie ships Python 3.13 by default, older versions not in repos
+- **Resolution**: Installed pyenv, built Python 3.11.9 from source with full build deps
+- **Learning**: Newer Debian releases require pyenv for specific Python versions
+
+**Challenge 3**: pandas-ta Installation Failures
+- **Error**: "Could not find version that satisfies requirement" for pandas-ta
+- **Root Cause**: Package unavailable on piwheels for arm64, recent PyPI versions require Python >=3.12
+- **Resolution**: Codebase grep revealed pandas-ta unused, removed from requirements.txt
+- **Learning**: Always validate dependencies are actually imported before troubleshooting installations
+
+**Challenge 4**: Docker Not Installed
+- **Error**: `docker: command not found` when attempting GHCR login
+- **Root Cause**: Fresh OS installation doesn't include Docker Engine
+- **Resolution**: Installed via Docker convenience script, added user to docker group
+- **Learning**: Docker requires explicit installation and group membership on Raspberry Pi OS
+
+**Challenge 5**: IBKR Gateway Container Crash Loop
+- **Error**: "Offline TWS/Gateway version 1015 not installed: can't find jars folder"
+- **Root Cause**: Docker images expect Gateway binaries at /home/ibgateway/Jts but jars missing
+- **Status**: **UNRESOLVED** - All tested public images fail with same error
+- **Learning**: Public IBKR Gateway Docker images may have incomplete builds; manual installation more reliable
+
+---
+
+### **📁 KEY FILE CHANGES (Session 12/29/2025)**
+
+**Files Modified**:
+1. **requirements.txt**: Removed `pandas-ta` line (unused dependency unavailable for Python 3.11)
+2. **docker-compose.gateway.yml**: Changed image from `ghcr.io/gyrasol/ibkr-gateway:latest` to `ghcr.io/gnzsnz/ib-gateway:stable`
+3. **docs/STEP_1_FLASH_OS.md**: Created comprehensive OS flashing guide (9 substeps)
+
+**Files Created on Pi**:
+- `~/ibkr-options-bot/.env` - IBKR credentials and configuration (chmod 600)
+- `~/ibkr-options-bot/.venv/` - Python 3.11.9 virtual environment with all dependencies
+
+**Git Status**:
+- Local Windows copy has modifications (requirements.txt, docker-compose.gateway.yml, docs/)
+- Pi remote copy has same modifications plus .env (not tracked)
+- Need to stage, commit, and push local changes to sync main branch
+
+---
+
+### **🔧 TECHNICAL ENVIRONMENT SNAPSHOT**
+
+**Pi Hardware & OS**:
+- **Model**: Raspberry Pi 4
+- **Hostname**: Jeremiah
+- **IP**: 192.168.7.117
+- **OS**: Debian GNU/Linux Trixie (not Bookworm as expected)
+- **Kernel**: Linux 6.12.47+rpt-rpi-v8 (64-bit arm64)
+- **Username**: saladbar751 (custom, not default "pi")
+
+**Python Environment**:
+- **System Python**: 3.13.5 (Trixie default)
+- **Bot Python**: 3.11.9 (pyenv-managed, in .venv)
+- **Package Manager**: pip 25.3, piwheels mirror active
+- **Key Packages**: ib-insync 0.9.86, pydantic 2.12.5, pandas 2.3.3, numpy 2.4.0
+
+**Docker Setup**:
+- **Engine**: 29.1.3
+- **Compose**: CLI plugin v2.27.1
+- **Registry**: Logged into ghcr.io with GitHub PAT (read:packages scope)
+- **Test**: hello-world container ran successfully
+
+**IBKR Configuration**:
+- **Mode**: Paper trading
+- **Port**: 4002
+- **Client ID**: 101
+- **Username**: saladbar751
+- **Password**: _?gB,2_ZkR?Le84 (stored in .env)
+- **Timezone**: TZ=America/New_York (in .env for bot market hours)
+
+**System Timezone**:
+- **Strategy**: Kept system timezone as user-configured (non-ET)
+- **Bot Timezone**: TZ=America/New_York set in .env for accurate market hours (9:30-16:00 ET)
+
+---
+
+### **🎯 DEPLOYMENT SUCCESS CRITERIA**
+
+**Before proceeding to Step 12 (bot validation)**:
+- [ ] Gateway container running or manual Gateway process active
+- [ ] Port 4002 listening: `ss -tln | grep 4002` shows LISTEN
+- [ ] IBKR API responding: `python test_ibkr_connection.py --host 127.0.0.1 --port 4002` succeeds
+- [ ] SPY market data fetched (confirms API permissions and connectivity)
+- [ ] No container crash loops in `docker ps` or `docker compose logs`
+
+**Configuration Verification**:
+- [ ] `dry_run: true` in configs/settings.yaml (CRITICAL - prevents real orders)
+- [ ] `.env` file contains IBKR_USERNAME, IBKR_PASSWORD, TZ=America/New_York
+- [ ] Virtual environment activated: `source ~/ibkr-options-bot/.venv/bin/activate`
+- [ ] All dependencies importable: `python -c "import ib_insync, pandas, numpy; print('OK')"`
+
+---
+
+### **📚 DOCUMENTATION CREATED**
+
+**New Deployment Guide**:
+- **docs/STEP_1_FLASH_OS.md** - Complete OS flashing walkthrough (9 substeps with troubleshooting)
+  - Raspberry Pi Imager installation
+  - Device and OS selection guidance
+  - SSH and timezone pre-configuration
+  - Time estimates and verification steps
+
+**Updated Files**:
+- **README.md** - This comprehensive session summary (replaced "Start Here" section)
+- **.github/copilot-instructions.md** - Already contains full architecture guidance
+
+**Pending Documentation** (Step 14):
+- Pi deployment runbook with copy-paste commands
+- Troubleshooting section for common Pi deployment issues
+- Gateway resolution decision tree (Docker vs manual)
+
+---
+
+### **⏱️ TIME ESTIMATES (Remaining Work)**
+
+**Gateway Resolution (Critical Path)**:
+- Option A (try different image): 15-30 minutes
+- Option B (manual install): 45-60 minutes  ← **RECOMMENDED**
+- Option C (custom image): 60-90 minutes
+
+**Post-Gateway Steps**:
+- Connectivity testing: 5-10 minutes
+- Bot dry-run validation: 10-15 minutes
+- Discord alert testing: 5 minutes (if configured)
+- Runbook documentation: 20-30 minutes
+- Bracket order testing: 10 minutes (optional)
+
+**Total Remaining**: 90-150 minutes (depending on Gateway path chosen)
+
+---
+
+### **🚨 SAFETY REMINDERS**
+
+**Before Any Bot Execution**:
+- ✅ Verify `dry_run: true` in configs/settings.yaml
+- ✅ Confirm IBKR_PORT=4002 (paper trading port, not 4001 live port)
+- ✅ Start with single symbol only (SPY) in configs/settings.yaml
+- ✅ Monitor logs continuously during first 3 cycles: `tail -f logs/bot.log`
+- ✅ Have `Ctrl+C` ready to interrupt if unexpected behavior occurs
+
+**Never Bypass**:
+- Daily loss guards (`should_stop_trading_today()`)
+- Position sizing limits (`position_size()`)
+- Liquidity filters (`is_liquid()`)
+- Market hours checks (`is_rth()`)
+
+---
+
+### **💡 QUICK REFERENCE COMMANDS**
+
+**Pi SSH Access**:
+```bash
+ssh saladbar751@192.168.7.117
+cd ~/ibkr-options-bot
+source .venv/bin/activate
+```
+
+**Gateway Management**:
+```bash
+# Docker-based (if using containers)
+docker compose -f docker-compose.gateway.yml up -d       # Start
+docker compose -f docker-compose.gateway.yml logs -f     # Monitor
+docker compose -f docker-compose.gateway.yml down        # Stop
+docker ps | grep gateway                                  # Check status
+
+# Manual Gateway (if installed directly)
+~/start_gateway.sh                                        # Start
+ps aux | grep ibgateway                                  # Check process
+ss -tln | grep 4002                                      # Verify port
+```
+
+**Bot Operations**:
+```bash
+# Test connectivity first
+python test_ibkr_connection.py --host 127.0.0.1 --port 4002 --timeout 10
+
+# Run bot (dry_run mode)
+python -m src.bot.app
+
+# Monitor logs in separate terminal
+tail -f logs/bot.log
+tail -f logs/bot.jsonl  # Structured logs for parsing
+```
+
+**Troubleshooting**:
+```bash
+# Check environment variables
+set -a; . ./.env; set +a
+env | grep IBKR_
+
+# Verify Python packages
+python -c "import ib_insync, pandas, numpy; print('Dependencies OK')"
+
+# Test Docker connectivity
+docker run --rm hello-world
+
+# Check for port conflicts
+sudo ss -tln | grep 4002
+```
+
+---
+
+### **🔄 GIT WORKFLOW (End of Session)**
+
+**Stage and Commit Local Changes**:
+```bash
+# From Windows local repository
+cd "C:\Users\tasms\my-new-project\Trading Bot\ibkr-options-bot"
+
+# Review changes
+git status
+git diff requirements.txt
+git diff docker-compose.gateway.yml
+
+# Stage all changes
+git add requirements.txt docker-compose.gateway.yml docs/STEP_1_FLASH_OS.md README.md
+
+# Commit with descriptive message
+git commit -m "feat(pi): Complete Pi deployment Phase 1 - Steps 1-8
+
+- Remove pandas-ta from requirements.txt (unused, unavailable for Python 3.11)
+- Update docker-compose.gateway.yml to gnzsnz/ib-gateway:stable
+- Add comprehensive OS flashing guide (docs/STEP_1_FLASH_OS.md)
+- Update README with session 12/29/2025 progress and next steps
+
+Completed: OS flash, SSH config, Python 3.11.9 via pyenv, dependencies, Docker install
+Blocker: Gateway container crash loop (jars folder missing in all tested images)
+Next: Manual Gateway installation recommended (Option B)"
+
+# Push to main branch
+git push origin main
+```
+
+**Verify Remote Sync**:
+```bash
+# Check GitHub repository shows latest commit
+git log -1 --oneline
+git remote -v
+```
+
+---
+
+## **Architecture Overview**
 
 This bot implements a **protocol-based broker architecture** with:
 - **Broker Abstraction**: Protocol interface allowing StubBroker (testing) and IBKRBroker (production)
@@ -86,11 +422,12 @@ This bot implements a **protocol-based broker architecture** with:
 - **Orchestration**: Scheduler with cron-like execution, structured logging
 
 **Key Files**:
-- `src/bot/app.py` - Main application entry point
+- `src/bot/app.py` - Main application entry point with startup validation
 - `src/bot/broker/ibkr.py` - IBKR connectivity and order management
-- `src/bot/strategy/scalp_rules.py` - Primary trading strategy
-- `configs/settings.yaml` - Configuration management
-- `.github/copilot-instructions.md` - AI agent guidance (200+ lines)
+- `src/bot/strategy/scalp_rules.py` - Primary trading strategy (RSI + volume)
+- `src/bot/strategy/whale_rules.py` - Volume spike detection (3-day debounce)
+- `configs/settings.yaml` - Unified configuration management (Pydantic)
+- `.github/copilot-instructions.md` - AI agent guidance (comprehensive patterns)
 
 ## Development Setup
 
