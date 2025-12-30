@@ -82,13 +82,13 @@ def run_cycle(broker, settings: Dict[str, Any]):
             # Ensure broker is connected before processing
             if hasattr(broker, "is_connected") and callable(getattr(broker, "is_connected")):
                 if not broker.is_connected():
-                    logger.warning("Broker disconnected; attempting reconnection for %s", symbol)
+                    logger.warning("Broker disconnected; attempting reconnection for {}", symbol)
                     try:
                         broker.connect()
                         logger.info("Broker reconnected successfully")
                     except Exception as conn_err:  # pylint: disable=broad-except
                         logger.error(
-                            "Failed to reconnect broker: %s: %s",
+                            "Failed to reconnect broker: {}: {}",
                             type(conn_err).__name__,
                             str(conn_err),
                         )

@@ -60,7 +60,7 @@ class IBKRBroker:
         if self.ib.isConnected():
             return
         logger.info(
-            "Connecting to IB at %s:%s clientId=%s",
+            "Connecting to IB at {}:{} clientId={}",
             self.host,
             self.port,
             self.client_id,
