@@ -66,17 +66,10 @@ class IBKRBroker:
             self.client_id,
         )
         try:
-            if hasattr(self.ib, "connectAsync"):
-                loop = self.ib.loop or asyncio.get_event_loop()
-                loop.run_until_complete(
-                    self.ib.connectAsync(
-                        self.host, self.port, clientId=self.client_id, timeout=timeout
-                    )
-                )
-            else:
-                self.ib.connect(
-                    self.host, self.port, clientId=self.client_id, timeout=timeout
-                )
+            # Prefer synchronous connect for compatibility; avoids accessing missing attributes like ib.loop
+            self.ib.connect(
+                self.host, self.port, clientId=self.client_id, timeout=timeout
+            )
         except Exception as exc:  # pragma: no cover
             logger.exception("IB connect failed: {}", exc)
             raise
