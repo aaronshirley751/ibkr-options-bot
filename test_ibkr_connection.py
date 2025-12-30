@@ -83,7 +83,16 @@ def main() -> int:
 
         # Options (ATM call)
         # Get strikes from sec def and choose nearest to last
-        secdefs = ib.reqSecDefOptParams(args.symbol, "SMART", "STK")
+        # IBKR now requires the underlying conId for reqSecDefOptParams
+        conId = 0
+        try:
+            details = ib.reqContractDetails(stock)
+            if details:
+                conId = getattr(details[0].contract, "conId", 0) or 0
+        except Exception:
+            conId = 0
+
+        secdefs = ib.reqSecDefOptParams(args.symbol, "SMART", "STK", conId)
         if secdefs:
             sd = secdefs[0]
             strikes = [float(s) for s in sd.strikes if s is not None]
