@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -64,8 +65,13 @@ class IBKRBroker:
             self.port,
             self.client_id,
         )
-        # Use synchronous connect to avoid coroutine warnings in retries
-        self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=timeout)
+        # Await the async connect explicitly to avoid 'coroutine was never awaited' warnings
+        loop = self.ib.loop or asyncio.get_event_loop()
+        loop.run_until_complete(
+            self.ib.connectAsync(
+                self.host, self.port, clientId=self.client_id, timeout=timeout
+            )
+        )
 
     def is_connected(self) -> bool:
         return bool(self.ib and self.ib.isConnected())
