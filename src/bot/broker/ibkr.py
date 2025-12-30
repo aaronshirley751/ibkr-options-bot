@@ -64,12 +64,8 @@ class IBKRBroker:
             self.port,
             self.client_id,
         )
-        # Use async connect to avoid 'coroutine was never awaited' warnings under tenacity
-        self.ib.run(
-            self.ib.connectAsync(
-                self.host, self.port, clientId=self.client_id, timeout=timeout
-            )
-        )
+        # Use synchronous connect to avoid coroutine warnings in retries
+        self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=timeout)
 
     def is_connected(self) -> bool:
         return bool(self.ib and self.ib.isConnected())
