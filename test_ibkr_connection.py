@@ -109,10 +109,11 @@ def main() -> int:
             print({"event": "option_snapshot", "ok": False, "reason": "no_secdef"})
 
         # Historical bars (1m x 30m)
+        # Request 30 minutes of 1-minute bars (use seconds; 'M' means months in IB API)
         bars = ib.reqHistoricalData(
             stock,
             endDateTime="",
-            durationStr="30 M",
+            durationStr="1800 S",  # 30 minutes
             barSizeSetting="1 min",
             whatToShow="TRADES",
             useRTH=True,
