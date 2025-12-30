@@ -65,14 +65,18 @@ class IBKRBroker:
             self.port,
             self.client_id,
         )
-        # Await the async connect explicitly to avoid 'coroutine was never awaited' warnings
-        loop = self.ib.loop or asyncio.get_event_loop()
         try:
-            loop.run_until_complete(
-                self.ib.connectAsync(
+            if hasattr(self.ib, "connectAsync"):
+                loop = self.ib.loop or asyncio.get_event_loop()
+                loop.run_until_complete(
+                    self.ib.connectAsync(
+                        self.host, self.port, clientId=self.client_id, timeout=timeout
+                    )
+                )
+            else:
+                self.ib.connect(
                     self.host, self.port, clientId=self.client_id, timeout=timeout
                 )
-            )
         except Exception as exc:  # pragma: no cover
             logger.exception("IB connect failed: {}", exc)
             raise
