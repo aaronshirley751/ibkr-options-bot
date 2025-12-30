@@ -66,7 +66,14 @@ class IBKRBroker:
             self.client_id,
         )
         try:
-            # Prefer synchronous connect for compatibility; avoids accessing missing attributes like ib.loop
+            # Ensure an event loop exists in this thread for ib_insync
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            # Prefer synchronous connect for compatibility; ib_insync will use the loop above
             self.ib.connect(
                 self.host, self.port, clientId=self.client_id, timeout=timeout
             )
