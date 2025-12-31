@@ -313,7 +313,7 @@ class IBKRBroker:
     def historical_prices(
         self,
         symbol: str,
-        duration: str = "60 M",
+        duration: str = "3600 S",
         bar_size: str = "1 min",
         what_to_show: str = "TRADES",
         use_rth: bool = True,
@@ -322,7 +322,7 @@ class IBKRBroker:
 
         Args:
             symbol: Underlying stock symbol.
-            duration: IBKR duration string (e.g., '30 M', '60 M', '1 D').
+            duration: IBKR duration string in seconds or days (e.g., '3600 S' for 1 hour, '1 D' for 1 day).
             bar_size: IBKR bar size (e.g., '1 min', '5 mins', '1 hour').
             what_to_show: Data type, default 'TRADES'.
             use_rth: Restrict to Regular Trading Hours.
