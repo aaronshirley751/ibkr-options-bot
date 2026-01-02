@@ -111,9 +111,24 @@ class IBKRBroker:
         """Fetch option expirations and strikes and return a list of OptionContract for nearest weekly ATM calls and puts."""
         if not self.is_connected():
             self.connect()
-        # use reqSecDefOptParams to get chain info
+        
+        # First resolve the underlying contract to get its conId
         try:
-            chains = self.ib.reqSecDefOptParams(symbol, "SMART", "STK")
+            underlying = Stock(symbol, "SMART", "USD")
+            contracts = self.ib.qualifyContracts(underlying)
+            if not contracts:
+                logger.warning("could not qualify underlying contract for %s", symbol)
+                return []
+            underlying_conid = contracts[0].conId
+        except (ConnectionError, TimeoutError, AttributeError) as e:
+            logger.exception(
+                "failed to qualify underlying contract for %s: %s", symbol, type(e).__name__
+            )
+            return []
+        
+        # use reqSecDefOptParams to get chain info with underlyingConId
+        try:
+            chains = self.ib.reqSecDefOptParams(symbol, "SMART", "STK", underlyingConId=underlying_conid)
         except (ConnectionError, TimeoutError, AttributeError) as e:
             logger.exception(
                 "failed to fetch option chain params for %s: %s", symbol, type(e).__name__
