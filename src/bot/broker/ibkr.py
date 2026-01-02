@@ -129,10 +129,14 @@ class IBKRBroker:
         # use reqSecDefOptParams to get chain info with underlyingConId
         try:
             chains = self.ib.reqSecDefOptParams(symbol, "SMART", "STK", underlyingConId=underlying_conid)
-        except (ConnectionError, TimeoutError, AttributeError) as e:
+        except (ConnectionError, TimeoutError, AttributeError, TypeError) as e:
             logger.exception(
                 "failed to fetch option chain params for %s: %s", symbol, type(e).__name__
             )
+            return []
+
+        if not chains:
+            logger.warning("reqSecDefOptParams returned empty chain list for %s (underlying conId=%s)", symbol, underlying_conid)
             return []
 
         # find first chain matching underlying symbol
@@ -142,7 +146,7 @@ class IBKRBroker:
                 chain = c
                 break
         if not chain:
-            logger.warning("no option chain found for %s", symbol)
+            logger.warning("no option chain found for %s in %d chains returned", symbol, len(chains))
             return []
 
         expirations = sorted(set(chain.expirations))
