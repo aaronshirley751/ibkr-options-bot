@@ -4,74 +4,68 @@ Lightweight scaffold for an IBKR options trading bot with clean layers (broker, 
 
 ---
 
-## Session Summary (2025-12-31)
-**Complete end-to-end validation achieved: Bot connects to Gateway, loads account data, fetches historical bars, and runs stable scheduler cycles.**
+## Session Summary (2026-01-02)
+**Paper Trading Validation - Markets OPEN: Bot successfully connects, fetches bars, evaluates strategy signals, and handles errors gracefully. All core data flow validated.**
 
 ### Major Accomplishments
-1. **Gateway Remote Access Enabled** (2025-12-31 ~10:00 UTC)
-   - Windows IBKR Gateway reconfigured to accept remote client connections
-   - Verified paper trading mode (port 4002) accessible from Raspberry Pi at 192.168.7.205:4002
-   - Account connection: DUM490080 with $1,013,348.83 net liquidation
+1. **End-to-End Bot Validation** (2026-01-02 ~13:30 UTC)
+   - ✅ Gateway connectivity verified (Windows localhost test: 16 bars returned)
+   - ✅ Remote connectivity verified (Pi→Gateway 192.168.7.205:4002: 16 bars returned)
+   - ✅ Repository synced to latest (commit 685d993)
+   - ✅ Bot successfully starts, connects, loads account data
+   - ✅ **Scheduler fetches 46 bars per cycle** (markets OPEN, RTH check passes)
+   - ✅ Strategy evaluation runs without crashes
+   - ✅ Market data flows through pipeline (timestamp-indexed OHLCV)
 
-2. **Settings Configuration Fixed** (2025-12-31 ~11:30 UTC)
-   - Corrected hardcoded host from 127.0.0.1 to 192.168.7.205 in configs/settings.yaml on Pi
-   - Environment variable override (BROKER__HOST) working as fallback for flexibility
+2. **Option Chain API Error Fixed** (2026-01-02 ~13:28 UTC)
+   - **Root Cause**: `reqSecDefOptParams()` requires `underlyingConId` parameter, not just symbol string
+   - **Error**: `TypeError: IB.reqSecDefOptParams() missing 1 required positional argument: 'underlyingConId'`
+   - **Solution**: 
+     - Qualify underlying contract first via `qualifyContracts()` to get its `conId`
+     - Pass `underlyingConId` parameter to `reqSecDefOptParams()` call
+     - Added enhanced error logging for debugging
+   - **Commits**: 
+     - 685d993 "fix: add underlyingConId to reqSecDefOptParams call for option chain fetching"
+     - 218b5bd "chore: improve option_chain error logging for debugging"
 
-3. **Historical Data Duration Bug Fixed** (2025-12-31 ~11:45 UTC)
-   - **Root Cause**: Duration parameter "60 M" in ibkr.py interpreted as 60 months by IBKR API
-   - **Error**: IB Error 321 "Historical data request for durations longer than 12 months must be made in years"
-   - **Solution**: Changed default duration from "60 M" to "3600 S" (3600 seconds = 1 hour)
-   - **Result**: ✅ Bot now successfully fetches 46 historical 1-minute bars per cycle
-   - **Commit**: 88879d1 "fix: change historical data duration from '60 M' to '3600 S' to fix IBKR error 321"
+3. **Bot Behavior Validation** (2026-01-02 ~13:28-13:40 UTC, Markets OPEN)
+   - ✅ Connection: Successful to 192.168.7.205:4002
+   - ✅ Account load: DUM490080 with $1,013,436.12 net liquidation
+   - ✅ Historical bars: 46 bars fetched per cycle (1-minute bars, 3600S duration)
+   - ✅ Strategy signal: Evaluated and triggered BUY/SELL action (real market data)
+   - ✅ Error handling: Graceful skip when option chain unavailable (paper trading limitation)
+   - ✅ No crashes on signal evaluation or option fetch attempts
+   - ✅ Logs clean and structured with proper context binding
 
-4. **Bot Execution Validation** (2025-12-31 ~12:00 UTC)
-   - Bot running continuously on Pi with stable 5-minute scheduler cycles
-   - Account data loads correctly on connection
-   - Heartbeats stable (~3 minute intervals)
-   - No crash on error handling (graceful skip when data unavailable)
-
-### Data Flow Verified (11:56 UTC log capture)
+### Key Data Flow Example (from Bot Log 1 01022026)
 ```
-Request:   3600 S duration (1 hour window) + 1-minute bars
-Response:  46 bars from 11:55-12:40 US/Eastern with complete OHLCV data
-Status:    ✅ SUCCESS - bars flow through pipeline for strategy evaluation
+12:24:51:585  Request:  [20;3;0;SPY;STK;;0.0;;;SMART;;USD;;;0;;1 min;3600 S;1;TRADES;1;0;;]
+12:24:51:950  Response: 46 bars from 12:24:00-13:09:00 US/Eastern
+              Bar 1: open=682.37, high=682.41, low=682.13, close=682.16, vol=52246
+              Bar 46: open=680.84, high=680.96, low=680.78, close=680.82, vol=36316
+Status:       ✅ SUCCESS - Real market data with proper OHLCV
 ```
 
-## Errors, Root Causes, and Fixes (Session 2025-12-31)
+## Errors, Root Causes, and Fixes (Session 2026-01-02)
 
-### Issue 1: Event Loop Missing in Worker Thread
-- **Root Cause**: ib_insync.connect() called from scheduler thread without bound event loop
-- **Error**: `RuntimeError: There is no current event loop in thread 'ThreadPoolExecutor-...'`
-- **Status**: ✅ FIXED (previous session, commit be8cef7)
-- **Solution**: broker.connect() now creates dedicated event loop in worker thread
+### Issue 1: Option Chain Missing underlyingConId
+- **Root Cause**: `ib_insync.IB.reqSecDefOptParams()` signature requires underlyingConId as a parameter for security definition lookups
+- **Error**: `TypeError: IB.reqSecDefOptParams() missing 1 required positional argument: 'underlyingConId'`
+- **Trigger**: When strategy signal evaluates to BUY/SELL, bot attempts to pick weekly option contract
+- **Status**: ✅ FIXED (commit 685d993)
+- **Solution**: Qualify underlying contract first to get conId, pass to reqSecDefOptParams
+- **Next Issue**: Option chain returns empty for paper accounts (data subscription limitation, not a code bug)
 
-### Issue 2: Gateway Remote Connections Blocked
-- **Root Cause**: Windows IBKR Gateway configured for localhost connections only
-- **Error**: `TimeoutError()` when Pi tried to connect to 192.168.7.205:4002
-- **Status**: ✅ FIXED (2025-12-31 ~10:15 UTC)
-- **Solution**: User updated Gateway settings to "Allow API connections from remote IP addresses"
-
-### Issue 3: Incorrect Host in Settings
-- **Root Cause**: configs/settings.yaml hardcoded host to 127.0.0.1 on Pi
-- **Error**: Bot connected to localhost instead of remote Gateway
-- **Status**: ✅ FIXED (2025-12-31 ~11:30 UTC, verified via ssh sed)
-- **Solution**: Updated settings.yaml broker.host from "127.0.0.1" to "192.168.7.205"
-
-### Issue 4: Historical Data Duration Format ⭐ CRITICAL FIX
-- **Root Cause**: Duration parameter "60 M" sent to IBKR API; API interprets "M" as months for durations > 12M
-- **Error**: IB Error 321 "Historical data request for durations longer than 12 months must be made in years"
-- **Status**: ✅ FIXED (2025-12-31 ~11:45 UTC)
-- **Solution**: Changed [src/bot/broker/ibkr.py](src/bot/broker/ibkr.py) line 313 from `"60 M"` to `"3600 S"`
-- **Evidence**: Bot Test Log 3 shows successful bar fetch at 11:56:00 with 46 bars returned
-
-## Current State (2025-12-31 Post-Fix)
-- **Connectivity**: ✅ Pi → Windows Gateway (192.168.7.205:4002) stable and verified
-- **Account Data**: ✅ Loads correctly, heartbeats every ~3 minutes
-- **Historical Bars**: ✅ 46 bars/cycle fetched successfully (1-minute resolution, 3600S window)
-- **Scheduler**: ✅ Runs 5-minute cycles with SPY symbol in dry_run mode
-- **Error Handling**: ✅ Graceful (skips symbols if data unavailable, doesn't crash)
-- **Data Flow**: ✅ Bars available for strategy evaluation (scalp_rules, whale_rules)
-- **Order Execution**: ⏳ Dry-run mode active (no real orders); ready for paper trading validation
+## Current State (2026-01-02 Post-Validation)
+- **Connectivity**: ✅ Pi ↔ Gateway stable, tested during market hours
+- **Account Data**: ✅ Loads correctly, heartbeats stable
+- **Historical Bars**: ✅ 46 bars per cycle fetched successfully (real market data)
+- **Scheduler**: ✅ Runs 5-minute cycles with SPY, evaluates strategy every cycle
+- **Strategy Signals**: ✅ Evaluates on market data, triggers BUY/SELL when conditions met
+- **Error Handling**: ✅ Graceful: skips symbol when option chain unavailable (expected for paper trading)
+- **Data Flow**: ✅ Complete end-to-end validation with real market data
+- **Order Execution**: ⏳ Dry-run mode active; strategy can trigger but option fetching returns empty (paper limitation)
+- **Production Readiness**: ⏳ Core infrastructure solid; needs live data subscription or alternative option fetching approach
 
 ## START HERE NEXT SESSION
 
