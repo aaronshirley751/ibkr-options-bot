@@ -1,3 +1,4 @@
+import asyncio
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -74,6 +75,12 @@ def run_cycle(broker, settings: Dict[str, Any]):
         broker_lock = Lock()
 
     def _with_broker_lock(fn, *args, **kwargs):
+        # Ensure event loop exists in calling thread (for ib_insync calls from worker threads)
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+        
         with broker_lock:
             return fn(*args, **kwargs)
 
