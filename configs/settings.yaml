@@ -1,5 +1,5 @@
 broker:
-  host: "127.0.0.1"
+  host: "192.168.7.205"  # Windows Gateway IP
   port: 4002  # paper default for IB Gateway
   client_id: 101
   read_only: false
