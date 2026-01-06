@@ -4,6 +4,41 @@ Lightweight scaffold for an IBKR options trading bot with clean layers (broker, 
 
 ---
 
+## Session Summary (2026-01-06)
+Live connectivity validated end-to-end; real-time API quotes still not streaming despite active subscriptions. Historical data and account access are healthy; a support ticket has been opened with IBKR to refresh/apply entitlements.
+
+### What We Did Today
+- Verified Windows IB Gateway network config complete (remote access enabled; Read-Only API OFF).
+- From Raspberry Pi, confirmed live connection on 4001 with multiple `clientId`s; account values load (NetLiq ~$538).
+- Pulled historical bars successfully (30–31 × 1‑min TRADES for SPY; current timestamps/prices present).
+- Requested streaming and delayed quotes across all market data types (1=live, 2=frozen, 3=delayed, 4=delayed‑frozen); all returned `nan` for SPY and EUR.
+- Options chain request (`reqSecDefOptParams`) returned empty (`no_secdef`).
+- Performed clean logout everywhere (live/paper/web/mobile), restarted Gateway, pressed Ctrl+Alt+F, and re-tested — behavior unchanged.
+
+### Current Assessment
+- Subscriptions show ACTIVE in Client Portal: base “US Securities Snapshot & Futures Value Bundle (NP,L1)” plus “US Equity and Options Add‑On Streaming Bundle (NP)” and Cboe One Add‑On.
+- Market Data API Acknowledgement signed on 2026‑01‑05; status Non‑Professional.
+- Symptoms (quotes = `nan`, empty secdef) strongly indicate API entitlements not applied to the session/account, despite portal status.
+
+### Support Ticket Filed
+Subject: “API real-time market data not streaming (nan quotes) despite active bundles and API ACK — IB Gateway 10.37”.
+Included details: account balance, bundles, API ACK date, environment (Gateway 10.37 Windows; Raspberry Pi Python 3.11.9, ib_insync 0.9.86), timestamps, and exact API calls used.
+
+### Next Session Priorities
+1. Await IBKR response/entitlement refresh; re-test streaming quotes and options secdef immediately on receipt.
+2. If quotes flow: validate options chain retrieval, then run extended live validation (60+ minutes during RTH) with `dry_run: true`.
+3. Confirm strategy signals with live data and verify dry-run order logging.
+
+### Quick Re-Test Commands (Pi)
+```
+# Live quotes + options secdef
+python test_ibkr_connection.py --host 192.168.7.205 --port 4001 --client-id 187 --timeout 15
+
+# Bot (dry run)
+python -m src.bot.app
+```
+
+
 ## Session Summary (2026-01-05) ⭐ CRITICAL DISCOVERY
 **Account Funding Requirement Found & Resolved. Paper Trading Validated. Live Account Network Configuration Required.**
 
