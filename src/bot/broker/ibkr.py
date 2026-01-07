@@ -273,7 +273,7 @@ class IBKRBroker:
         if has_children:
             order.transmit = False
 
-        trade = self.ib.placeOrder(contract, order)
+        self.ib.placeOrder(contract, order)
 
         parent_order_id = getattr(order, "orderId", None)
 

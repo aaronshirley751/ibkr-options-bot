@@ -13,14 +13,23 @@ def _http_post(
     data = json.dumps(payload).encode("utf-8")
     req = request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
+    req.add_header("User-Agent", "Mozilla/5.0 (compatible; IBKR-Bot/1.0)")
     for k, v in (headers or {}).items():
         req.add_header(k, v)
     try:
         with request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             code = getattr(resp, "getcode", lambda: 0)()
             return 200 <= code < 300
+    except request.HTTPError as e:  # pylint: disable=broad-except
+        # Discord webhooks return 204 No Content on success, which urlopen treats as error
+        # Check if it's actually a success response
+        if e.code in (200, 201, 204):
+            logger.debug(f"HTTP POST to {url} succeeded with code {e.code}")
+            return True
+        logger.debug(f"HTTP POST failed to {url}: HTTP {e.code} - {e.reason}")
+        return False
     except Exception as e:  # pylint: disable=broad-except
-        logger.debug(f"HTTP POST failed to {url}: {e}")
+        logger.debug(f"HTTP POST failed to {url}: {type(e).__name__}: {e}")
         return False
 
 
@@ -87,7 +96,11 @@ def alert_all(settings: dict, message: str) -> None:
         return
     
     # Discord (primary)
-    notify_discord(mon.get("discord_webhook_url"), message)
+    username = mon.get("discord_username")
+    if username:
+        notify_discord(mon.get("discord_webhook_url"), message, username=username)
+    else:
+        notify_discord(mon.get("discord_webhook_url"), message)
     
     # Slack (legacy support)
     notify_slack(mon.get("slack_webhook_url"), message)

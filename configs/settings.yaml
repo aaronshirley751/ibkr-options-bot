@@ -1,5 +1,5 @@
 broker:
-  host: "192.168.7.205"  # Windows Gateway IP
+  host: "127.0.0.1"  # Default to localhost; override for remote gateway
   port: 4001  # live account with dry_run safety
   client_id: 211
   read_only: false
