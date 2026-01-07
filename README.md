@@ -4,44 +4,29 @@ Lightweight scaffold for an IBKR options trading bot with clean layers (broker, 
 
 ---
 
-## Session Summary (2026-01-07 Extended) ⭐ READY FOR EXTENDED DRY-RUN
+## Session Summary (2026-01-07 Extended RTH) ⭐ PARTIAL PASS
 
-**QA Round 1 complete. All low-priority cleanups done. Discord notifications working. 116/116 tests passing.**
+**Connectivity solid; historical data timed out after first cycle. Discord alerts already verified in prior session.**
 
-### Major Accomplishments (This Update)
-1. ✅ **Code Cleanup** - Removed unused imports and variables from scheduler and broker modules
-2. ✅ **Discord Notifications** - Fixed HTTP error handling (Discord 204 responses), added User-Agent header
-3. ✅ **Test Script Created** - `scripts/test_discord.py` for webhook testing with CLI args and env vars
-4. ✅ **All Tests Passing** - 116 tests confirmed after cleanup changes
-5. ✅ **Alerts Ready** - Bot can now send notifications to Discord for trade events and alerts
+### Findings (This Run)
+1. ✅ **Broker wiring good** - Reconnect to 192.168.7.205:4001 (clientId 213) succeeded; option chain returned 34 expirations/427 strikes.
+2. ✅ **Dry-run safety** - First cycle simulated order and launched emulated OCO.
+3. ⚠️ **Historical data timeouts** - `reqHistoricalData` timed out every subsequent cycle → scheduler skipped for insufficient bars (<30).
+4. ⚠️ **Exit** - Job ended with code 130 after repeated timeouts (no crashes).
 
-### Code Changes This Session
-- [src/bot/scheduler.py](src/bot/scheduler.py) - Removed unused `traceback` import
-- [src/bot/broker/ibkr.py](src/bot/broker/ibkr.py) - Removed unused `trade` variable in `place_order()`
-- [src/bot/monitoring.py](src/bot/monitoring.py) - Fixed HTTP 204 handling, added User-Agent header
-- [scripts/test_discord.py](scripts/test_discord.py) - New test script for webhook validation
-- [configs/settings.yaml](configs/settings.yaml) - Localhost defaults (override for remote gateway)
-- [.env](.env) - Updated with working Discord webhook URL
+### Recommended Bot Improvements
+1. Add backoff/early-exit when repeated historical timeouts occur (and/or try `use_rth=False`, longer duration, shorter bar window) to avoid tight retry loops.
+2. Optional startup hook to clear today’s loss-guard entry in `logs/daily_state.json` when `dry_run`/off-hours, gated by a setting like `risk.reset_daily_guard_on_start` (default `false`).
 
-### Discord Integration Testing
-```bash
-# Test with env var
-DISCORD_WEBHOOK_URL="https://..." python scripts/test_discord.py --message "hello"
-
-# Test with CLI args
-python scripts/test_discord.py --webhook "https://..." --message "test" --username "Bot"
-```
-
-### QA Review Status
-✅ **APPROVED FOR EXTENDED DRY-RUN** per [Deployment Readiness QA Round 1 Report](Deployment%20Readiness%20QA%20Round%201%20Report%20-%20IBKR%20Options%20Trading%20Bot.md)
+### Current Config Changes
+- [configs/settings.yaml](configs/settings.yaml) now points to gateway `192.168.7.205` with `client_id: 213` for extended runs.
 
 ### Next Steps
-1. **Extended Dry-Run** (2-3 trading days, 09:30-16:00 ET) - Monitor logs, memory, signals
-2. **Discord Webhook Integration** - Configure in settings.yaml for live trade alerts
-3. **Peer Review Approval** - Complete review of code changes
-4. **Paper Trading Decision** - After dry-run validation, authorize `dry_run: false` for paper trading
+1. Run during market hours with improved historical data handling/backoff to confirm multi-cycle behavior.
+2. Implement optional loss-guard reset flag (keep disabled by default to protect live trading).
+3. Re-run extended dry-run and analyze with `scripts/analyze_logs.py --bot-log <file>`.
 
-📖 **Previous Session**: [SESSION_2026-01-07_COMPLETE.md](SESSION_2026-01-07_COMPLETE.md) - Production-ready milestone
+📖 **Previous Session**: [SESSION_2026-01-07_COMPLETE.md](SESSION_2026-01-07_COMPLETE.md)
 
 ---
 

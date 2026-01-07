@@ -1,7 +1,7 @@
 broker:
-  host: "127.0.0.1"  # Default to localhost; override for remote gateway
+  host: "192.168.7.205"  # Gateway host for extended dry-run
   port: 4001  # live account with dry_run safety
-  client_id: 211
+  client_id: 213
   read_only: false
 
 # Phase 1 Pi-optimized settings: Start conservative, scale up after baseline established
