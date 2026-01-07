@@ -125,6 +125,14 @@ def emulate_oco(
         max_duration_seconds: Maximum runtime before exiting (default 28800 = 8 hours)
     """
     logger.info("Starting emulated OCO for parent %s", parent_order_id)
+    
+    # Ensure event loop exists in this thread (needed for ib_insync broker calls)
+    import asyncio
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    
     tp_triggered = False
     sl_triggered = False
     import time as time_module

@@ -84,26 +84,60 @@ class IBKRBroker:
     def is_connected(self) -> bool:
         return bool(self.ib and self.ib.isConnected())
 
-    def market_data(self, symbol: str, timeout: float = 2.0) -> Quote:
+    def market_data(self, symbol, timeout: float = 3.0) -> Quote:
+        """Get market data for symbol or contract. Uses async API to avoid event loop conflicts.
+        
+        Args:
+            symbol: Either a string symbol (for stocks) or an OptionContract object
+            timeout: Max seconds to wait for data
+        """
         if not self.is_connected():
             self.connect()
-        contract = Stock(symbol, "SMART", "USD")
-        # request a snapshot ticker
-        ticker = self.ib.reqMktData(contract, snapshot=False, regulatorySnapshot=False)
-        # wait briefly for data
-        start = time.time()
-        while time.time() - start < timeout:
-            if ticker.bid and ticker.ask and (ticker.last or ticker.close):
-                last = float(ticker.last or ticker.close)
-                bid = float(ticker.bid)
-                ask = float(ticker.ask)
-                return Quote(
-                    symbol=symbol, last=last, bid=bid, ask=ask, time=time.time()
-                )
-            time.sleep(0.2)
-        # fallback: return empty quote with zeros
-        logger.warning("market_data timeout for %s", symbol)
-        return Quote(symbol=symbol, last=0.0, bid=0.0, ask=0.0, time=time.time())
+        
+        from ib_insync import util, Option
+        import asyncio
+        
+        # Handle both string symbols (stocks) and OptionContract objects (options)
+        if isinstance(symbol, str):
+            contract = Stock(symbol, "SMART", "USD")
+            symbol_str = symbol
+        else:
+            # Assume it's an OptionContract with attributes: symbol, expiry, strike, right
+            contract = Option(
+                getattr(symbol, "symbol", ""),
+                getattr(symbol, "expiry", ""),
+                float(getattr(symbol, "strike", 0.0)),
+                getattr(symbol, "right", "C"),
+                "SMART"
+            )
+            symbol_str = f"{getattr(symbol, 'symbol', '')} {getattr(symbol, 'expiry', '')} {getattr(symbol, 'strike', 0.0)} {getattr(symbol, 'right', 'C')}"
+        
+        async def _get_quote():
+            # Qualify contract first
+            await self.ib.qualifyContractsAsync(contract)
+            # Request market data with proper async API
+            ticker = self.ib.reqMktData(contract, snapshot=False, regulatorySnapshot=False)
+            # Wait for data to populate
+            start = time.time()
+            while time.time() - start < timeout:
+                await asyncio.sleep(0.2)
+                if ticker.bid and ticker.ask and (ticker.last or ticker.close):
+                    last = float(ticker.last or ticker.close)
+                    bid = float(ticker.bid)
+                    ask = float(ticker.ask)
+                    return Quote(symbol=symbol_str, last=last, bid=bid, ask=ask, time=time.time())
+            # Timeout fallback
+            return None
+        
+        try:
+            quote = util.run(_get_quote())
+            if quote:
+                return quote
+            logger.warning(f"market_data timeout for {symbol_str} after {timeout}s")
+            return Quote(symbol=symbol_str, last=0.0, bid=0.0, ask=0.0, time=time.time())
+        except Exception as e:
+            logger.exception(f"market_data failed for {symbol_str}: {type(e).__name__}")
+            return Quote(symbol=symbol_str, last=0.0, bid=0.0, ask=0.0, time=time.time())
 
     def option_chain(
         self, symbol: str, expiry_hint: str = "weekly"
@@ -127,8 +161,11 @@ class IBKRBroker:
             return []
         
         # use reqSecDefOptParams to get chain info with underlyingConId
+        # Note: Use async API via util.run() to avoid event loop conflicts after connectAsync
         try:
-            chains = self.ib.reqSecDefOptParams(symbol, "SMART", "STK", underlyingConId=underlying_conid)
+            from ib_insync import util
+            chains = util.run(self.ib.reqSecDefOptParamsAsync(symbol, "", "STK", underlying_conid))
+            logger.info(f"reqSecDefOptParams returned {len(chains) if chains else 0} chains for {symbol} (conId={underlying_conid})")
         except (ConnectionError, TimeoutError, AttributeError, TypeError) as e:
             logger.exception(
                 "failed to fetch option chain params for %s: %s", symbol, type(e).__name__
@@ -139,10 +176,10 @@ class IBKRBroker:
             logger.warning("reqSecDefOptParams returned empty chain list for %s (underlying conId=%s)", symbol, underlying_conid)
             return []
 
-        # find first chain matching underlying symbol
+        # find first chain matching underlying symbol (check tradingClass attribute)
         chain = None
         for c in chains:
-            if c.underlyingSymbol.upper() == symbol.upper():
+            if c.tradingClass.upper() == symbol.upper():
                 chain = c
                 break
         if not chain:
@@ -151,6 +188,9 @@ class IBKRBroker:
 
         expirations = sorted(set(chain.expirations))
         strikes = sorted(set(chain.strikes))
+        
+        logger.info(f"Option chain for {symbol}: {len(expirations)} expirations, {len(strikes)} strikes")
+        logger.debug(f"First 3 expirations: {expirations[:3]}, strike range: {strikes[0]}-{strikes[-1]}")
 
         # pick expiry: next Friday for weekly
         if expiry_hint == "weekly":
@@ -172,19 +212,28 @@ class IBKRBroker:
         if not strikes:
             return []
         atm = min(strikes, key=lambda s: abs(s - last))
+        
+        # Find ATM index and return ATM +/- 5 strikes for flexibility
+        atm_idx = strikes.index(atm)
+        start_idx = max(0, atm_idx - 5)
+        end_idx = min(len(strikes), atm_idx + 6)
+        strike_range = strikes[start_idx:end_idx]
+        
+        logger.info(f"Returning {len(strike_range)} strikes around ATM {atm} (range: {strike_range[0]}-{strike_range[-1]})")
 
         contracts: List[OptionContract] = []
-        # create ATM Call and Put
-        for right in ("C", "P"):
-            contracts.append(
-                OptionContract(
-                    symbol=symbol,
-                    right=right,
-                    strike=float(atm),
-                    expiry=expiry,
-                    multiplier=100,
+        # create contracts for ATM +/- 5 strikes, both calls and puts
+        for strike in strike_range:
+            for right in ("C", "P"):
+                contracts.append(
+                    OptionContract(
+                        symbol=symbol,
+                        right=right,
+                        strike=float(strike),
+                        expiry=expiry,
+                        multiplier=100,
+                    )
                 )
-            )
         return contracts
 
     def _to_ib_contract(self, oc: OptionContract) -> Contract:

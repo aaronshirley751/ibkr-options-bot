@@ -1,7 +1,7 @@
 broker:
   host: "192.168.7.205"  # Windows Gateway IP
-  port: 4002  # paper default for IB Gateway
-  client_id: 101
+  port: 4001  # live account with dry_run safety
+  client_id: 211
   read_only: false
 
 # Phase 1 Pi-optimized settings: Start conservative, scale up after baseline established
@@ -28,7 +28,7 @@ options:
   expiry: "weekly"     # "weekly" picker
   moneyness: "atm"     # atm | itmp1 | otmp1
   max_spread_pct: 2.0  # reject illiquid chains
-  min_volume: 200
+  min_volume: 0        # Volume data not reliably available via API; use spread % instead
 
 journal:
   path_csv: "logs/trades.csv"
