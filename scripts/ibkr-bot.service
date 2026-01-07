@@ -1,0 +1,28 @@
+[Unit]
+Description=IBKR Options Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=saladbar751
+WorkingDirectory=/home/saladbar751/ibkr-options-bot
+Environment="PATH=/home/saladbar751/ibkr-options-bot/.venv/bin"
+Environment="BROKER__HOST=192.168.7.205"
+Environment="BROKER__PORT=4001"
+ExecStart=/home/saladbar751/ibkr-options-bot/.venv/bin/python -m src.bot.app
+Restart=on-failure
+RestartSec=60
+StandardOutput=append:/home/saladbar751/ibkr-options-bot/logs/bot.log
+StandardError=append:/home/saladbar751/ibkr-options-bot/logs/bot.log
+
+# Safety limits
+MemoryLimit=500M
+CPUQuota=80%
+
+# Service hardening
+NoNewPrivileges=true
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
