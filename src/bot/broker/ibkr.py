@@ -83,6 +83,26 @@ class IBKRBroker:
 
     def is_connected(self) -> bool:
         return bool(self.ib and self.ib.isConnected())
+    
+    def is_gateway_healthy(self) -> bool:
+        """Verify Gateway connection is responsive, not just 'connected'.
+        
+        This is a lightweight health check that detects degraded connections
+        without triggering market data requests.
+        
+        Returns:
+            True if Gateway is healthy, False if degraded or disconnected.
+        """
+        if not self.is_connected():
+            return False
+        
+        try:
+            # managedAccounts() is a fast, read-only call that doesn't create subscriptions
+            accounts = self.ib.managedAccounts()
+            return bool(accounts)
+        except Exception as e:
+            logger.debug("Gateway health check failed: %s", type(e).__name__)
+            return False
 
     def market_data(self, symbol, timeout: float = 5.0) -> Quote:
         """Get market data snapshot for symbol or contract.
@@ -460,6 +480,20 @@ class IBKRBroker:
     def disconnect(self) -> None:
         try:
             if self.ib and self.ib.isConnected():
+                # Cancel all active market data subscriptions to prevent Gateway buffer accumulation
+                # This is critical for sustained operation - uncancelled subscriptions can cause
+                # Gateway to fill internal buffers after sustained requests
+                try:
+                    for ticker in list(self.ib.tickers()):
+                        try:
+                            self.ib.cancelMktData(ticker.contract)
+                            logger.debug("cancelled subscription: %s", ticker.contract.symbol)
+                        except Exception as tick_err:
+                            logger.debug("error cancelling subscription: %s", type(tick_err).__name__)
+                except Exception as list_err:
+                    logger.debug("error listing tickers: %s", type(list_err).__name__)
+                
+                # Now safely disconnect
                 self.ib.disconnect()
         except Exception as e:
             logger.debug("error during disconnect: %s", type(e).__name__)

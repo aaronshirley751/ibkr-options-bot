@@ -25,6 +25,55 @@ from .strategy.whale_rules import whale_rules
 # Note: consider adding US holiday calendar and pre/post-market handling
 
 
+class GatewayCircuitBreaker:
+    """Detect and prevent cascading failures from sustained Gateway issues.
+    
+    After N consecutive failures, opens circuit to prevent overwhelming Gateway
+    with retry requests. Allows periodic recovery attempts (half-open state).
+    """
+    
+    def __init__(self, failure_threshold: int = 3, reset_timeout_seconds: int = 300):
+        self.failures = 0
+        self.threshold = failure_threshold
+        self.state = "CLOSED"  # CLOSED=healthy, OPEN=tripped, HALF_OPEN=testing
+        self.last_failure_time = 0
+        self.reset_timeout = reset_timeout_seconds
+    
+    def record_failure(self):
+        """Record a failure and update circuit state."""
+        self.failures += 1
+        self.last_failure_time = time.time()
+        if self.failures >= self.threshold:
+            self.state = "OPEN"
+            logger.warning("GatewayCircuitBreaker OPEN: %d consecutive failures", self.failures)
+    
+    def record_success(self):
+        """Record a success and reset circuit."""
+        if self.failures > 0:
+            logger.info("GatewayCircuitBreaker reset after %d failures", self.failures)
+        self.failures = 0
+        self.state = "CLOSED"
+    
+    def should_attempt(self) -> bool:
+        """Determine if operation should be attempted based on circuit state."""
+        if self.state == "CLOSED":
+            return True
+        elif self.state == "OPEN":
+            # Allow recovery attempt after timeout
+            elapsed = time.time() - self.last_failure_time
+            if elapsed > self.reset_timeout:
+                self.state = "HALF_OPEN"
+                logger.info("GatewayCircuitBreaker HALF_OPEN: attempting recovery")
+                return True
+            return False
+        else:  # HALF_OPEN
+            return True  # Allow recovery attempt
+
+
+_gateway_circuit_breaker = GatewayCircuitBreaker(failure_threshold=3, reset_timeout_seconds=300)
+
+
+
 def is_rth(now_utc: datetime) -> bool:
     ny = now_utc.astimezone(ZoneInfo("America/New_York"))
     start = dtime(hour=9, minute=30)
@@ -101,6 +150,15 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
     def process_symbol(symbol: str):
         try:
+            # Check circuit breaker: if Gateway has failed consistently, skip this cycle
+            if not _gateway_circuit_breaker.should_attempt():
+                logger.bind(
+                    symbol=symbol,
+                    event="circuit_breaker_open",
+                    circuit_state=_gateway_circuit_breaker.state,
+                ).warning("Skipping symbol; circuit breaker is OPEN (Gateway recovery in progress)")
+                return
+            
             # Throttle requests: 200ms delay between symbols to prevent Gateway EBuffer overflow
             # Use lock for thread-safe access when max_concurrent_symbols > 1
             with _throttle_lock:
@@ -195,6 +253,8 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 ).warning("Historical data fetch failed: {}", type(fetch_err).__name__)
                 data_fetch_failed = True
                 bars = None
+                # Record failure to circuit breaker for Gateway health detection
+                _gateway_circuit_breaker.record_failure()
 
             df1 = _to_df(bars) if bars is not None else []
             # Proceed only if we have a pandas DataFrame; else skip this symbol gracefully
@@ -431,11 +491,17 @@ def run_cycle(broker, settings: Dict[str, Any]):
                         "contract": getattr(opt, "symbol", None),
                     }
                     log_trade(trade)
+                    # Record successful cycle to circuit breaker
+                    _gateway_circuit_breaker.record_success()
 
         except (ConnectionError, TimeoutError, ValueError, RuntimeError) as e:
             logger.exception("symbol processing failed: %s", type(e).__name__)
+            # Record error to circuit breaker
+            _gateway_circuit_breaker.record_failure()
         except Exception as e:
             logger.exception("unexpected error during symbol processing: %s", type(e).__name__)
+            # Record unexpected error to circuit breaker
+            _gateway_circuit_breaker.record_failure()
             try:
                 alert_all(settings, f"symbol processing error for {symbol}: see logs")
             except Exception as e:
