@@ -85,11 +85,14 @@ class IBKRBroker:
         return bool(self.ib and self.ib.isConnected())
 
     def market_data(self, symbol, timeout: float = 5.0) -> Quote:
-        """Get market data for symbol or contract. Uses async API to avoid event loop conflicts.
+        """Get market data snapshot for symbol or contract.
+        
+        Uses snapshot mode to avoid persistent streaming subscriptions
+        that would overwhelm Gateway buffers with Greeks/model updates.
         
         Args:
             symbol: Either a string symbol (for stocks) or an OptionContract object
-            timeout: Max seconds to wait for data
+            timeout: Max seconds to wait for data (increased for snapshot mode)
         """
         if not self.is_connected():
             self.connect()
@@ -115,19 +118,32 @@ class IBKRBroker:
         async def _get_quote():
             # Qualify contract first
             await self.ib.qualifyContractsAsync(contract)
-            # Request market data with proper async API
-            # CRITICAL: snapshot=True prevents persistent streaming subscriptions that cause Gateway buffer overflow
+            
+            # CRITICAL: Use snapshot=True to prevent streaming subscriptions
+            # This eliminates automatic Greeks/model parameter subscriptions
+            # that cause Gateway buffer overflow
             ticker = self.ib.reqMktData(contract, snapshot=True, regulatorySnapshot=False)
-            # Wait for data to populate
+            
+            # Wait for snapshot data to arrive
             start = time.time()
             while time.time() - start < timeout:
-                await asyncio.sleep(0.1)  # Can poll faster with snapshot (no streaming overhead)
-                if ticker.bid and ticker.ask and (ticker.last or ticker.close):
-                    last = float(ticker.last or ticker.close)
-                    bid = float(ticker.bid)
-                    ask = float(ticker.ask)
-                    return Quote(symbol=symbol_str, last=last, bid=bid, ask=ask, time=time.time())
-            # Timeout fallback
+                await asyncio.sleep(0.1)
+                
+                # Extract values with proper None/NaN handling for snapshot mode
+                bid = ticker.bid if (ticker.bid is not None and ticker.bid > 0) else None
+                ask = ticker.ask if (ticker.ask is not None and ticker.ask > 0) else None
+                last = ticker.last if (ticker.last is not None and ticker.last > 0) else None
+                close = ticker.close if ticker.close else None
+                
+                if bid and ask:
+                    price = last or close or ((bid + ask) / 2)
+                    return Quote(
+                        symbol=symbol_str, 
+                        last=float(price),
+                        bid=float(bid), 
+                        ask=float(ask), 
+                        time=time.time()
+                    )
             return None
         
         try:
