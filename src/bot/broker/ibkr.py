@@ -54,7 +54,7 @@ class IBKRBroker:
         stop=stop_after_attempt(3),
         retry=retry_if_exception_type(Exception),
     )
-    def connect(self, timeout: int = 10) -> None:
+    def connect(self, timeout: int = 10, max_client_id_retries: int = 5) -> None:
         if not self.ib:
             raise RuntimeError("ib_insync not installed")
         if self.ib.isConnected():
@@ -74,9 +74,36 @@ class IBKRBroker:
                 asyncio.set_event_loop(loop)
 
             # Prefer synchronous connect for compatibility; ib_insync will use the loop above
-            self.ib.connect(
-                self.host, self.port, clientId=self.client_id, timeout=timeout
-            )
+            attempts = 0
+            while True:
+                try:
+                    self.ib.connect(
+                        self.host, self.port, clientId=self.client_id, timeout=timeout
+                    )
+                    break
+                except Exception as exc:  # pragma: no cover
+                    msg = str(exc).lower()
+                    # Detect client-id in use (IB error 326) and retry with next id
+                    if ("client" in msg and "id" in msg and "use" in msg) or "326" in msg:
+                        old = self.client_id
+                        attempts += 1
+                        if attempts > max_client_id_retries:
+                            logger.error(
+                                "ClientId retry exhausted (last id={}); giving up", old
+                            )
+                            raise
+                        self.client_id = int(self.client_id) + 1
+                        logger.warning(
+                            "ClientId {} in use; retrying with {} (attempt {}/{})",
+                            old,
+                            self.client_id,
+                            attempts,
+                            max_client_id_retries,
+                        )
+                        time.sleep(1)
+                        continue
+                    # Other errors: re-raise to let tenacity handle backoff
+                    raise
         except Exception as exc:  # pragma: no cover
             logger.exception("IB connect failed: {}", exc)
             raise
@@ -487,16 +514,19 @@ class IBKRBroker:
                     for ticker in list(self.ib.tickers()):
                         try:
                             self.ib.cancelMktData(ticker.contract)
-                            logger.debug("cancelled subscription: %s", ticker.contract.symbol)
+                            logger.debug(
+                                "cancelled subscription: {}",
+                                getattr(getattr(ticker, "contract", None), "symbol", str(getattr(ticker, "contract", ""))),
+                            )
                         except Exception as tick_err:
-                            logger.debug("error cancelling subscription: %s", type(tick_err).__name__)
+                            logger.debug("error cancelling subscription: {}", type(tick_err).__name__)
                 except Exception as list_err:
-                    logger.debug("error listing tickers: %s", type(list_err).__name__)
+                    logger.debug("error listing tickers: {}", type(list_err).__name__)
                 
                 # Now safely disconnect
                 self.ib.disconnect()
         except Exception as e:
-            logger.debug("error during disconnect: %s", type(e).__name__)
+            logger.debug("error during disconnect: {}", type(e).__name__)
 
     def __enter__(self):
         self.connect()

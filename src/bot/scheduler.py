@@ -125,6 +125,7 @@ _throttle_lock = Lock()  # Thread-safe access to _LAST_REQUEST_TIME
 
 def run_cycle(broker, settings: Dict[str, Any]):
     """One scheduler cycle: fetch bars, compute signals, and optionally submit orders."""
+    cycle_start = time.time()
     symbols = settings.get("symbols", [])
 
     # Ensure broker access is serialized unless the implementation is known to be thread-safe
@@ -515,6 +516,19 @@ def run_cycle(broker, settings: Dict[str, Any]):
         futures = {executor.submit(process_symbol, sym): sym for sym in symbols}
         for _ in as_completed(futures):
             pass
+
+    # Emit end-of-cycle event for monitoring/analytics
+    duration = round(time.time() - cycle_start, 3)
+    try:
+        logger.bind(
+            event="cycle_complete",
+            symbols=len(symbols),
+            duration_seconds=duration,
+            circuit_state=_gateway_circuit_breaker.state,
+        ).info("Cycle complete: {} symbols in {:.2f}s", len(symbols), duration)
+    except Exception:
+        # Don't let logging issues disrupt scheduling
+        logger.debug("cycle_complete logging failed")
 
 
 def run_scheduler(broker, settings: Dict[str, Any]):

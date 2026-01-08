@@ -3,6 +3,10 @@ import sys
 
 from . import log as _log
 
+# Initialize logging sinks (file + JSON) via side-effect import
+# Ensures logs/bot.log and logs/bot.jsonl are created for long runs
+from . import logging_conf as _logging_conf  # noqa: F401
+
 logger = _log.logger
 from .settings import get_settings
 
