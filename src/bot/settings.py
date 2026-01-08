@@ -34,7 +34,12 @@ class OptionsSettings(BaseModel):
     moneyness: str = Field(default="atm")
     max_spread_pct: float = Field(default=2.0, ge=0.0, le=100.0)
     min_volume: int = Field(default=100, ge=0)
-    strike_count: int = Field(default=3, ge=1, le=25)
+    strike_count: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Number of near-ATM strikes to evaluate. Higher values increase Gateway load."
+    )
 
     @field_validator("moneyness")
     @classmethod

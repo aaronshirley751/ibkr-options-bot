@@ -84,7 +84,7 @@ class IBKRBroker:
     def is_connected(self) -> bool:
         return bool(self.ib and self.ib.isConnected())
 
-    def market_data(self, symbol, timeout: float = 3.0) -> Quote:
+    def market_data(self, symbol, timeout: float = 5.0) -> Quote:
         """Get market data for symbol or contract. Uses async API to avoid event loop conflicts.
         
         Args:
@@ -116,11 +116,12 @@ class IBKRBroker:
             # Qualify contract first
             await self.ib.qualifyContractsAsync(contract)
             # Request market data with proper async API
-            ticker = self.ib.reqMktData(contract, snapshot=False, regulatorySnapshot=False)
+            # CRITICAL: snapshot=True prevents persistent streaming subscriptions that cause Gateway buffer overflow
+            ticker = self.ib.reqMktData(contract, snapshot=True, regulatorySnapshot=False)
             # Wait for data to populate
             start = time.time()
             while time.time() - start < timeout:
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.1)  # Can poll faster with snapshot (no streaming overhead)
                 if ticker.bid and ticker.ask and (ticker.last or ticker.close):
                     last = float(ticker.last or ticker.close)
                     bid = float(ticker.bid)

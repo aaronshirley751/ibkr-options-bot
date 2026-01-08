@@ -71,6 +71,7 @@ _TIMEOUT_BACKOFF_CYCLES = 2  # Skip for M cycles after threshold hit
 # Request throttling: add delay between symbol processing to prevent Gateway buffer overflow
 _LAST_REQUEST_TIME: Dict[str, float] = {}  # symbol -> last request timestamp
 _REQUEST_THROTTLE_DELAY = 0.2  # 200ms delay between symbol requests (prevents 1.3MB+ buffers)
+_throttle_lock = Lock()  # Thread-safe access to _LAST_REQUEST_TIME
 
 
 def run_cycle(broker, settings: Dict[str, Any]):
@@ -101,12 +102,13 @@ def run_cycle(broker, settings: Dict[str, Any]):
     def process_symbol(symbol: str):
         try:
             # Throttle requests: 200ms delay between symbols to prevent Gateway EBuffer overflow
-            # (Gateway was showing "EBuffer has grown to 1.3MB+" with rapid requests)
-            last_req = _LAST_REQUEST_TIME.get(symbol, 0)
-            elapsed = time.time() - last_req
-            if elapsed < _REQUEST_THROTTLE_DELAY:
-                time.sleep(_REQUEST_THROTTLE_DELAY - elapsed)
-            _LAST_REQUEST_TIME[symbol] = time.time()
+            # Use lock for thread-safe access when max_concurrent_symbols > 1
+            with _throttle_lock:
+                last_req = _LAST_REQUEST_TIME.get(symbol, 0)
+                elapsed = time.time() - last_req
+                if elapsed < _REQUEST_THROTTLE_DELAY:
+                    time.sleep(_REQUEST_THROTTLE_DELAY - elapsed)
+                _LAST_REQUEST_TIME[symbol] = time.time()
 
             # Check backoff: skip symbol if it's in timeout backoff period
             if symbol in _timeout_tracker:
