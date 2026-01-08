@@ -1,22 +1,22 @@
-# Phase 1 Test Configuration - Single Symbol
+# Phase 2 Test Configuration - Multi-Symbol
 broker:
   host: "192.168.7.205"
   port: 4001
-  client_id: 250  # Fresh client ID for clean Gateway state
+  client_id: 251  # New client ID for fresh Gateway connection
   read_only: false
 
 paper_trading: true
 dry_run: true
 
-symbols: ["SPY"]
+symbols: ["SPY", "QQQ", "AAPL"]
 
 schedule:
-  interval_seconds: 30  # Shorter cycle for testing
-  max_concurrent_symbols: 1
+  interval_seconds: 30  # 30 second cycles
+  max_concurrent_symbols: 2  # Process 2 symbols in parallel
 
 risk:
-  max_daily_loss_pct: 0.5  # 0.5% daily loss limit
-  max_risk_per_trade_pct: 0.2  # 0.2% per trade
+  max_daily_loss_pct: 0.5  
+  max_risk_per_trade_pct: 0.2  
   take_profit_pct: 0.5
   stop_loss_pct: 0.2
 
