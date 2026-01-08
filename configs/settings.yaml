@@ -1,8 +1,8 @@
-# Phase 2 Test Configuration - Multi-Symbol
+# Phase 3 Extended Dry-Run Configuration - 4+ Hours
 broker:
   host: "192.168.7.205"
   port: 4001
-  client_id: 251  # New client ID for fresh Gateway connection
+  client_id: 254  # New clientId for Phase 3 restart
   read_only: false
 
 paper_trading: true
@@ -11,8 +11,8 @@ dry_run: true
 symbols: ["SPY", "QQQ", "AAPL"]
 
 schedule:
-  interval_seconds: 30  # 30 second cycles
-  max_concurrent_symbols: 2  # Process 2 symbols in parallel
+  interval_seconds: 180  # 3-minute cycles for extended testing
+  max_concurrent_symbols: 1  # Sequential processing to avoid clientId conflicts
 
 risk:
   max_daily_loss_pct: 0.5  
