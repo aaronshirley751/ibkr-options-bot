@@ -1,7 +1,7 @@
 broker:
   host: "192.168.7.205"  # Gateway host for extended dry-run
   port: 4001  # live account with dry_run safety
-  client_id: 213
+  client_id: 216
   read_only: false
 
 # Phase 1 Pi-optimized settings: Start conservative, scale up after baseline established
@@ -23,12 +23,20 @@ risk:
   take_profit_pct: 0.30
   stop_loss_pct: 0.20
   whale_alloc_pct: 0.15
+  reset_daily_guard_on_start: false  # true = clear today's loss guard on startup (dry-run testing convenience)
 
 options:
   expiry: "weekly"     # "weekly" picker
   moneyness: "atm"     # atm | itmp1 | otmp1
   max_spread_pct: 2.0  # reject illiquid chains
   min_volume: 0        # Volume data not reliably available via API; use spread % instead
+  strike_count: 3      # Limit near-ATM strikes to reduce market data load
+
+historical:
+  duration: "7200 S"
+  use_rth: false
+  bar_size: "1 min"
+  what_to_show: "TRADES"
 
 journal:
   path_csv: "logs/trades.csv"
@@ -38,6 +46,7 @@ monitoring:
   alerts_enabled: true
   heartbeat_url: ""          # e.g., https://hc-ping.com/<uuid>
   discord_webhook_url: ""    # Primary: Discord webhook (Server Settings > Integrations > Webhooks > Copy URL)
+  discord_username: "IBKR Bot"
   slack_webhook_url: ""      # Optional: Slack Incoming Webhook URL
   telegram_bot_token: ""     # Optional: Telegram bot token
   telegram_chat_id: ""       # Optional: Telegram chat id

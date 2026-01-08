@@ -21,6 +21,7 @@ class RiskSettings(BaseModel):
     take_profit_pct: float = Field(default=0.30, ge=0.0, le=5.0)
     stop_loss_pct: float = Field(default=0.20, ge=0.0, le=1.0)
     whale_alloc_pct: float = Field(default=0.15, ge=0.0, le=1.0)
+    reset_daily_guard_on_start: bool = Field(default=False)
 
 
 class ScheduleSettings(BaseModel):
@@ -33,6 +34,7 @@ class OptionsSettings(BaseModel):
     moneyness: str = Field(default="atm")
     max_spread_pct: float = Field(default=2.0, ge=0.0, le=100.0)
     min_volume: int = Field(default=100, ge=0)
+    strike_count: int = Field(default=3, ge=1, le=25)
 
     @field_validator("moneyness")
     @classmethod
@@ -47,9 +49,17 @@ class MonitoringSettings(BaseModel):
     alerts_enabled: bool = Field(default=True)
     heartbeat_url: Optional[str] = Field(default=None)
     discord_webhook_url: Optional[str] = Field(default=None)  # Primary alerting
+    discord_username: Optional[str] = Field(default=None)
     slack_webhook_url: Optional[str] = Field(default=None)
     telegram_bot_token: Optional[str] = Field(default=None)
     telegram_chat_id: Optional[str] = Field(default=None)
+
+
+class HistoricalSettings(BaseModel):
+    duration: str = Field(default="7200 S")
+    use_rth: bool = Field(default=False)
+    bar_size: str = Field(default="1 min")
+    what_to_show: str = Field(default="TRADES")
 
 
 class Settings(BaseSettings):
@@ -70,6 +80,7 @@ class Settings(BaseSettings):
     risk: RiskSettings = RiskSettings()
     schedule: ScheduleSettings = ScheduleSettings()
     options: OptionsSettings = OptionsSettings()
+    historical: HistoricalSettings = HistoricalSettings()
     monitoring: MonitoringSettings = MonitoringSettings()
 
     @field_validator("mode")

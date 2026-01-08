@@ -16,7 +16,7 @@ logger = _log.logger
 from .data.options import pick_weekly_option
 from .execution import build_bracket, emulate_oco, is_liquid
 from .journal import log_trade
-from .monitoring import alert_all, send_heartbeat
+from .monitoring import alert_all, send_heartbeat, trade_alert
 from .risk import position_size, should_stop_trading_today
 from .strategy.scalp_rules import scalp_signal
 from .strategy.whale_rules import whale_rules
@@ -63,6 +63,15 @@ def _to_df(bars_iter) -> Any:
 _LOSS_ALERTED_DATE: Dict[str, Optional[ddate]] = {"date": None}
 _loss_alert_lock = Lock()
 
+# Track consecutive historical data timeouts per symbol for backoff logic
+_timeout_tracker: Dict[str, int] = {}  # symbol -> consecutive timeout count
+_TIMEOUT_BACKOFF_THRESHOLD = 3  # Skip after N consecutive timeouts
+_TIMEOUT_BACKOFF_CYCLES = 2  # Skip for M cycles after threshold hit
+
+# Request throttling: add delay between symbol processing to prevent Gateway buffer overflow
+_LAST_REQUEST_TIME: Dict[str, float] = {}  # symbol -> last request timestamp
+_REQUEST_THROTTLE_DELAY = 0.2  # 200ms delay between symbol requests (prevents 1.3MB+ buffers)
+
 
 def run_cycle(broker, settings: Dict[str, Any]):
     """One scheduler cycle: fetch bars, compute signals, and optionally submit orders."""
@@ -83,8 +92,44 @@ def run_cycle(broker, settings: Dict[str, Any]):
         with broker_lock:
             return fn(*args, **kwargs)
 
+    historical_cfg = settings.get("historical", {})
+    hist_duration = historical_cfg.get("duration", "7200 S")
+    hist_use_rth = bool(historical_cfg.get("use_rth", False))
+    hist_bar_size = historical_cfg.get("bar_size", "1 min")
+    hist_what = historical_cfg.get("what_to_show", "TRADES")
+
     def process_symbol(symbol: str):
         try:
+            # Throttle requests: 200ms delay between symbols to prevent Gateway EBuffer overflow
+            # (Gateway was showing "EBuffer has grown to 1.3MB+" with rapid requests)
+            last_req = _LAST_REQUEST_TIME.get(symbol, 0)
+            elapsed = time.time() - last_req
+            if elapsed < _REQUEST_THROTTLE_DELAY:
+                time.sleep(_REQUEST_THROTTLE_DELAY - elapsed)
+            _LAST_REQUEST_TIME[symbol] = time.time()
+
+            # Check backoff: skip symbol if it's in timeout backoff period
+            if symbol in _timeout_tracker:
+                timeout_count = _timeout_tracker[symbol]
+                if timeout_count >= _TIMEOUT_BACKOFF_THRESHOLD:
+                    # Decrement backoff counter
+                    _timeout_tracker[symbol] = timeout_count - 1
+                    if _timeout_tracker[symbol] <= 0:
+                        del _timeout_tracker[symbol]
+                        logger.bind(symbol=symbol, event="backoff_cleared").info(
+                            "Historical data backoff cleared; will retry next cycle"
+                        )
+                    else:
+                        logger.bind(
+                            symbol=symbol,
+                            event="backoff_skip",
+                            remaining_cycles=_timeout_tracker[symbol],
+                        ).info(
+                            "Skipping due to historical data backoff ({}  remaining)",
+                            _timeout_tracker[symbol],
+                        )
+                    return
+
             # Ensure broker is connected before processing
             if hasattr(broker, "is_connected") and callable(getattr(broker, "is_connected")):
                 if not broker.is_connected():
@@ -121,15 +166,33 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 return
             # fetch recent 1-min bars; try multiple broker methods
             bars = None
-            if hasattr(broker, "historical_prices"):
-                bars = _with_broker_lock(broker.historical_prices, symbol)
-            elif hasattr(broker, "market_data"):
-                # market_data may return historical bars or a snapshot Quote
-                try:
-                    bars = _with_broker_lock(broker.market_data, symbol)
-                except (ConnectionError, TimeoutError, AttributeError) as e:
-                    logger.debug("market_data failed for %s: %s", symbol, type(e).__name__)
-                    bars = None
+            data_fetch_failed = False
+            try:
+                if hasattr(broker, "historical_prices"):
+                    bars = _with_broker_lock(
+                        broker.historical_prices,
+                        symbol,
+                        duration=hist_duration,
+                        bar_size=hist_bar_size,
+                        what_to_show=hist_what,
+                        use_rth=hist_use_rth,
+                    )
+                elif hasattr(broker, "market_data"):
+                    # market_data may return historical bars or a snapshot Quote
+                    try:
+                        bars = _with_broker_lock(broker.market_data, symbol)
+                    except (ConnectionError, TimeoutError, AttributeError) as e:
+                        logger.debug("market_data failed for %s: %s", symbol, type(e).__name__)
+                        bars = None
+                        data_fetch_failed = True
+            except (TimeoutError, Exception) as fetch_err:  # pylint: disable=broad-except
+                logger.bind(
+                    symbol=symbol,
+                    event="historical_data_timeout",
+                    error=str(fetch_err),
+                ).warning("Historical data fetch failed: {}", type(fetch_err).__name__)
+                data_fetch_failed = True
+                bars = None
 
             df1 = _to_df(bars) if bars is not None else []
             # Proceed only if we have a pandas DataFrame; else skip this symbol gracefully
@@ -148,6 +211,28 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 logger.bind(event="insufficient_bars", symbol=symbol, bars=count).info(
                     "Skipping: insufficient bars (no pandas)"
                 )
+                # Increment timeout counter if fetch failed
+                if data_fetch_failed:
+                    _timeout_tracker[symbol] = _timeout_tracker.get(symbol, 0) + 1
+                    if _timeout_tracker[symbol] >= _TIMEOUT_BACKOFF_THRESHOLD:
+                        logger.bind(
+                            symbol=symbol,
+                            consecutive_failures=_timeout_tracker[symbol],
+                        ).warning(
+                            "Historical data fetch failed {} times; entering backoff (skip {} cycles)",
+                            _timeout_tracker[symbol],
+                            _TIMEOUT_BACKOFF_CYCLES,
+                        )
+                        if settings.get("risk", {}).get("data_loss_exit_on_backoff", True):
+                            try:
+                                open_positions = _with_broker_lock(broker.positions)
+                            except Exception:  # pylint: disable=broad-except
+                                open_positions = []
+                            alert_all(
+                                settings,
+                                f"Data unavailable for {symbol} in {_timeout_tracker[symbol]} consecutive attempts; entering backoff and recommending manual exit check. Positions: {open_positions}",
+                            )
+                        _timeout_tracker[symbol] = _TIMEOUT_BACKOFF_CYCLES
                 return
 
             bars_len = len(df1) if hasattr(df1, "__len__") else 0
@@ -155,7 +240,36 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 logger.bind(
                     event="insufficient_bars", symbol=symbol, bars=bars_len
                 ).info("Skipping: insufficient bars")
+                # Increment timeout counter if we have no bars
+                if bars_len == 0 or data_fetch_failed:
+                    _timeout_tracker[symbol] = _timeout_tracker.get(symbol, 0) + 1
+                    if _timeout_tracker[symbol] >= _TIMEOUT_BACKOFF_THRESHOLD:
+                        logger.bind(
+                            symbol=symbol,
+                            consecutive_failures=_timeout_tracker[symbol],
+                        ).warning(
+                            "Historical data unavailable {} times; entering backoff (skip {} cycles)",
+                            _timeout_tracker[symbol],
+                            _TIMEOUT_BACKOFF_CYCLES,
+                        )
+                        if settings.get("risk", {}).get("data_loss_exit_on_backoff", True):
+                            try:
+                                open_positions = _with_broker_lock(broker.positions)
+                            except Exception:  # pylint: disable=broad-except
+                                open_positions = []
+                            alert_all(
+                                settings,
+                                f"Data unavailable for {symbol} in {_timeout_tracker[symbol]} consecutive attempts; entering backoff and recommending manual exit check. Positions: {open_positions}",
+                            )
+                        _timeout_tracker[symbol] = _TIMEOUT_BACKOFF_CYCLES
                 return
+
+            # Success: clear timeout counter for this symbol
+            if symbol in _timeout_tracker:
+                logger.bind(symbol=symbol, event="data_recovered").info(
+                    "Historical data fetch successful; clearing timeout counter"
+                )
+                del _timeout_tracker[symbol]
 
             # compute scalp signal on 1-min bars
             scalp = scalp_signal(df1)  # type: ignore[arg-type]
@@ -198,6 +312,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     moneyness=cfg_opts.get("moneyness", "atm"),
                     min_volume=cfg_opts.get("min_volume", 100),
                     max_spread_pct=cfg_opts.get("max_spread_pct", 2.0),
+                    strike_count=cfg_opts.get("strike_count", 3),
                 )
                 if not opt:
                     logger.bind(
@@ -267,6 +382,18 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     order_id = "DRYRUN"
                 else:
                     order_id = _with_broker_lock(broker.place_order, ticket)
+
+                # Send entry alert with P/L placeholder for both live and dry-run
+                trade_alert(
+                    settings,
+                    stage="Entry",
+                    symbol=getattr(opt, "symbol", symbol),
+                    action=ticket.action,
+                    quantity=size,
+                    price=float(premium or 0.0),
+                    order_id=str(order_id) if order_id is not None else None,
+                    pnl=None,
+                )
 
                 # if broker doesn't support native OCO, emulate
                 # run emulate_oco in background thread

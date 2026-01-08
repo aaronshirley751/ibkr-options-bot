@@ -107,3 +107,40 @@ def alert_all(settings: dict, message: str) -> None:
     
     # Telegram (legacy support)
     notify_telegram(mon.get("telegram_bot_token"), mon.get("telegram_chat_id"), message)
+
+
+def trade_alert(
+    settings: dict,
+    stage: str,
+    symbol: str,
+    action: str,
+    quantity: float,
+    price: float,
+    order_id: Optional[str] = None,
+    pnl: Optional[float] = None,
+) -> None:
+    """Send trade lifecycle alert to Discord and legacy channels.
+
+    Args:
+        stage: "Entry" or "Exit" label
+        symbol: Underlying or option symbol
+        action: BUY/SELL direction
+        quantity: Filled or intended quantity
+        price: Fill or intended price
+        order_id: Optional order identifier (DRYRUN for simulations)
+        pnl: Profit/loss placeholder; pass None when unknown
+    """
+    mon = settings.get("monitoring", {})
+    if not mon or mon.get("alerts_enabled") is False:
+        return
+
+    username = mon.get("discord_username") or "IBKR Bot"
+    pnl_txt = "n/a" if pnl is None else f"{pnl:.2f}"
+    oid_txt = f" ({order_id})" if order_id else ""
+    msg = (
+        f"{stage}: {action} {quantity} {symbol} @ {price:.2f}{oid_txt} | P/L: {pnl_txt}"
+    )
+
+    notify_discord(mon.get("discord_webhook_url"), msg, username=username)
+    notify_slack(mon.get("slack_webhook_url"), msg)
+    notify_telegram(mon.get("telegram_bot_token"), mon.get("telegram_chat_id"), msg)

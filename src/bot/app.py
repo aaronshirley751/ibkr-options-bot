@@ -59,6 +59,16 @@ def main():
     signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
 
+    # Auto-reset daily loss guard if configured (dry-run testing convenience)
+    if settings.risk.reset_daily_guard_on_start:
+        logger.info("Auto-resetting daily loss guard (reset_daily_guard_on_start=True)")
+        from .risk import reset_daily_loss_guard
+        try:
+            reset_daily_loss_guard()
+            logger.info("✓ Daily loss guard cleared for today")
+        except Exception as reset_err:  # pylint: disable=broad-except
+            logger.warning("Failed to reset daily loss guard: %s", reset_err)
+
     # lazy import to avoid heavy deps at module import time
     from .broker.ibkr import IBKRBroker
     from .scheduler import run_scheduler

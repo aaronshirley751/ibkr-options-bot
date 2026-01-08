@@ -175,6 +175,22 @@ def get_start_of_day_equity(broker, path: Path = DEFAULT_STATE_PATH) -> Optional
     return cur
 
 
+def reset_daily_loss_guard(path: Path = DEFAULT_STATE_PATH) -> None:
+    """Clear today's entry from daily loss guard state.
+    
+    Used for extended dry-run testing across multiple restarts. Should only be
+    called when reset_daily_guard_on_start is True in settings.
+    
+    Args:
+        path: Path to the JSON state file (default: logs/daily_state.json).
+    """
+    state = load_equity_state(path)
+    key = _today_key()
+    if key in state:
+        del state[key]
+        save_equity_state(state, path)
+
+
 def should_stop_trading_today(
     broker, max_daily_loss_pct: float, path: Path = DEFAULT_STATE_PATH
 ) -> bool:

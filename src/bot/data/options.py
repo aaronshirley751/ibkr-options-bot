@@ -71,10 +71,12 @@ def pick_weekly_option(
     moneyness: str = "atm",
     min_volume: int = 100,
     max_spread_pct: float = 2.0,
+    strike_count: int = 3,
 ) -> Optional[object]:
     """Pick nearest-Friday weekly option for the given underlying and right ("C"/"P").
 
     Applies moneyness offsets and filters by volume and bid-ask spread percent.
+    Limits the number of near-ATM strikes considered via strike_count.
     Returns the best OptionContract or None.
     """
     try:
@@ -102,7 +104,9 @@ def pick_weekly_option(
     def _strike_distance(c) -> float:
         return abs(float(getattr(c, "strike", 0.0)) - float(target_strike))
 
-    candidates = sorted(contracts, key=_strike_distance)[:5]
+    # Limit number of candidates to reduce Gateway load (controls parallel market data/Greeks)
+    strike_window = max(1, int(strike_count))
+    candidates = sorted(contracts, key=_strike_distance)[:strike_window]
 
     # Filter by liquidity using current quotes
     viable: List[Tuple[object, float]] = []
