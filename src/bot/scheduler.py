@@ -269,6 +269,13 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 logger.debug("pandas import failed: %s", type(e).__name__)
                 is_df = False
 
+            logger.bind(symbol=symbol, event="data_check").info(
+                "[DEBUG] After fetch: bars type={}, is_df={}, df_shape={}",
+                type(df1).__name__ if df1 is not None else "None",
+                is_df,
+                df1.shape if is_df else "N/A"
+            )
+
             if not is_df:
                 count = len(df1) if hasattr(df1, "__len__") else 0
                 logger.bind(event="insufficient_bars", symbol=symbol, bars=count).info(

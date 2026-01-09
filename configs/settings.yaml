@@ -2,7 +2,7 @@
 broker:
   host: "192.168.7.205"
   port: 4001
-  client_id: 252  # Fresh client ID for Phase 3 retry
+  client_id: 260  # Fresh client ID to avoid collision
   read_only: false
 
 paper_trading: true

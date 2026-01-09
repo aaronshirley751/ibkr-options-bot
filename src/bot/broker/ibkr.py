@@ -487,6 +487,13 @@ class IBKRBroker:
             finally:
                 # Reset timeout to default for other operations
                 self.ib.RequestTimeout = old_timeout
+            
+            # DEBUG: Log what was returned
+            logger.info(f"[DEBUG] historical_prices({symbol}): raw bars count = {len(bars) if bars else 0}")
+            if bars and len(bars) > 0:
+                logger.info(f"[DEBUG] First bar: date={bars[0].date}, close={bars[0].close}")
+                logger.info(f"[DEBUG] Last bar: date={bars[-1].date}, close={bars[-1].close}")
+            
             rows = [
                 {
                     "time": pd.to_datetime(getattr(b, "date", None)),
@@ -498,11 +505,20 @@ class IBKRBroker:
                 }
                 for b in (bars or [])
             ]
+            logger.info(f"[DEBUG] Converted to rows: {len(rows)} rows")
+            
             if not rows:
+                logger.warning(f"[DEBUG] No rows after conversion, returning empty DataFrame")
                 return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])  # type: ignore[name-defined]
+            
             df = pd.DataFrame(rows)
+            logger.info(f"[DEBUG] DataFrame created: shape={df.shape}, columns={list(df.columns)}")
+            
             if "time" in df.columns:
                 df = df.set_index("time")
+                logger.info(f"[DEBUG] After set_index: shape={df.shape}, index name={df.index.name}")
+            
+            logger.info(f"[DEBUG] Returning DataFrame with {len(df)} rows for {symbol}")
             return df
         except Exception:
             logger.exception("historical_prices failed for %s", symbol)
