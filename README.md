@@ -413,3 +413,48 @@ See git history for detailed per-issue fixes. Key commits:
 - Keep symbols minimal (start with SPY) while validating connectivity
 - Monitor first cycles live and be ready to stop with Ctrl+C if behavior is unexpected
 
+
+## Session Summary (2026-01-09) ⭐ Signal Handling + Scheduler Stability — RESOLVED
+
+Today’s focus was fixing premature shutdowns seen in VS Code terminals and ensuring the bot stays up reliably. We implemented explicit Gateway connection in the app entry point, deferred signal handling during the connection phase, and added an interruptible stop event to the scheduler.
+
+### What Changed
+- ✅ Explicit `broker.connect()` before entering the scheduler (app startup)
+- ✅ Signal handler defers SIGINT/SIGTERM while connecting to prevent `asyncio.CancelledError`
+- ✅ Scheduler accepts `stop_event` and uses interruptible sleep for graceful exits
+- ✅ Improved startup logs for symbols, risk settings, and alert channels
+
+### Verified
+- ✓ Gateway connects to 192.168.7.205:4001 with `client_id=261`
+- ✓ Bot stays up in VS Code terminals; no early shutdown after ~9s
+- ✓ 117/117 tests passing; no regressions
+- ✓ Off-hours behavior: sleeps silently outside RTH (09:30–16:00 ET)
+
+### Run Inside VS Code (Windows)
+```powershell
+# Activate venv in the VS Code terminal
+& .\.venv\Scripts\Activate.ps1
+
+# Optional: ignore signals during long dry-run testing
+$env:BOT_IGNORE_SIGNALS = "1"
+
+# Start the bot
+python -m src.bot.app
+
+# View logs
+Get-Content -Tail 80 -Wait logs/bot.log
+```
+
+### START HERE NEXT SESSION (during RTH)
+- Confirm Gateway is running and shows API Connected.
+- In VS Code terminal:
+  - Activate venv: `& .\.venv\Scripts\Activate.ps1`
+  - Start bot: `python -m src.bot.app`
+  - Monitor logs: `Get-Content -Tail 80 -Wait logs/bot.log`
+- Success criteria (first 10–15 minutes):
+  - Cycle completes in under ~10s
+  - Historical fetch shows `[HIST] Completed` with 60+ bars
+  - No circuit breaker opens; no timeouts
+
+��� Detailed summary: [SIGNAL_HANDLING_FIX_SUMMARY.md](SIGNAL_HANDLING_FIX_SUMMARY.md)
+
