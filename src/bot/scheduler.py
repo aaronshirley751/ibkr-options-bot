@@ -144,10 +144,13 @@ def run_cycle(broker, settings: Dict[str, Any]):
             return fn(*args, **kwargs)
 
     historical_cfg = settings.get("historical", {})
-    hist_duration = historical_cfg.get("duration", "7200 S")
-    hist_use_rth = bool(historical_cfg.get("use_rth", False))
+    hist_duration = historical_cfg.get("duration", "3600 S")  # Default to 1 hour (was 7200 S)
+    hist_use_rth = bool(historical_cfg.get("use_rth", True))  # Default to RTH (was False)
     hist_bar_size = historical_cfg.get("bar_size", "1 min")
     hist_what = historical_cfg.get("what_to_show", "TRADES")
+    # Calculate timeout based on duration: ~1.5 seconds per minute of data requested
+    duration_seconds = int(hist_duration.split()[0])
+    hist_timeout = historical_cfg.get("timeout", max(60, duration_seconds // 40 + 30))
 
     def process_symbol(symbol: str):
         try:
@@ -230,6 +233,10 @@ def run_cycle(broker, settings: Dict[str, Any]):
             data_fetch_failed = False
             try:
                 if hasattr(broker, "historical_prices"):
+                    logger.debug(
+                        "Requesting historical data: symbol={}, duration={}, use_rth={}, timeout={}",
+                        symbol, hist_duration, hist_use_rth, hist_timeout
+                    )
                     bars = _with_broker_lock(
                         broker.historical_prices,
                         symbol,
@@ -237,6 +244,7 @@ def run_cycle(broker, settings: Dict[str, Any]):
                         bar_size=hist_bar_size,
                         what_to_show=hist_what,
                         use_rth=hist_use_rth,
+                        timeout=hist_timeout,  # NEW: Pass timeout parameter
                     )
                 elif hasattr(broker, "market_data"):
                     # market_data may return historical bars or a snapshot Quote

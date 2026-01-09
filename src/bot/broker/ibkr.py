@@ -471,9 +471,16 @@ class IBKRBroker:
 
             contract = Stock(symbol, "SMART", "USD")
             # Set request timeout for market hours: ib_insync default (~10s) insufficient during high load
-            # 60s is conservative but necessary during peak market hours when Gateway is busy
             old_timeout = self.ib.RequestTimeout
             self.ib.RequestTimeout = timeout
+            
+            # Log request parameters for debugging timeout issues
+            logger.info(
+                f"[HIST] Requesting: symbol={symbol}, duration={duration}, "
+                f"use_rth={use_rth}, timeout={timeout}s, RequestTimeout={self.ib.RequestTimeout}"
+            )
+            request_start = time.time()
+            
             try:
                 bars = self.ib.reqHistoricalData(
                     contract,
@@ -484,6 +491,8 @@ class IBKRBroker:
                     useRTH=use_rth,
                     formatDate=1,
                 )
+                request_elapsed = time.time() - request_start
+                logger.info(f"[HIST] Completed: symbol={symbol}, elapsed={request_elapsed:.2f}s, bars={len(bars) if bars else 0}")
             finally:
                 # Reset timeout to default for other operations
                 self.ib.RequestTimeout = old_timeout

@@ -27,6 +27,14 @@ options:
   min_volume: 100
   strike_count: 3  # Reduced from 5 for 40% fewer options requests
 
+# Historical data configuration (prevents timeout issues)
+historical:
+  duration: "3600 S"      # 1 hour of data (was defaulting to 7200 S / 2 hours)
+  use_rth: true           # Regular Trading Hours only (faster than extended hours)
+  bar_size: "1 min"       # 1-minute bars
+  what_to_show: "TRADES"  # Trade data
+  timeout: 90             # 90 seconds timeout for historical requests
+
 monitoring:
   alerts_enabled: false
   heartbeat_url: ""
