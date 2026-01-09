@@ -1,5 +1,7 @@
+import os
 import signal
 import sys
+import threading
 
 from . import log as _log
 
@@ -25,16 +27,15 @@ def main():
     if not settings.symbols:
         logger.error("No symbols configured; exiting")
         return
-    logger.info("✓ Symbols configured: %s", settings.symbols)
+    logger.info(f"✓ Symbols configured: {settings.symbols}")
 
     try:
         logger.info(
-            "✓ Risk settings: max_daily_loss=%.1f%%, max_risk_per_trade=%.1f%%",
-            settings.risk.max_daily_loss_pct * 100,
-            settings.risk.max_risk_pct_per_trade * 100,
+            f"✓ Risk settings: max_daily_loss={settings.risk.max_daily_loss_pct * 100:.1f}%"
+            f", max_risk_per_trade={settings.risk.max_risk_pct_per_trade * 100:.1f}%"
         )
     except Exception as risk_err:  # pylint: disable=broad-except
-        logger.warning("Risk settings not fully available: %s", risk_err)
+        logger.warning(f"Risk settings not fully available: {risk_err}")
 
     alert_channels = []
     mon = settings.monitoring
@@ -45,21 +46,35 @@ def main():
             alert_channels.append("Slack")
         if mon.telegram_bot_token:
             alert_channels.append("Telegram")
-        logger.info("✓ Alerts enabled: %s", ", ".join(alert_channels) or "none configured")
+        logger.info(f"✓ Alerts enabled: {', '.join(alert_channels) or 'none configured'}")
     else:
         logger.info("ℹ Alerts disabled")
 
     logger.info("Configuration validation complete")
 
-    # Setup signal handlers for graceful shutdown
-    shutdown_requested = False
-    
+    # Setup signal handlers for graceful shutdown (with optional ignore)
+    shutdown_event = threading.Event()
+    ignore_signals = os.getenv("BOT_IGNORE_SIGNALS", "").lower() in {"1", "true", "yes"}
+    connecting = True  # Flag to prevent shutdown during connection phase
+
     def handle_shutdown(signum, frame):
-        nonlocal shutdown_requested
-        logger.info("Shutdown signal received (signal %s)", signum)
-        shutdown_requested = True
-        sys.exit(0)
-    
+        nonlocal connecting
+        try:
+            sig_name = signal.Signals(signum).name  # richer logging to diagnose unexpected signals
+        except Exception:
+            sig_name = str(signum)
+
+        if connecting:
+            logger.warning(f"Shutdown signal received during connection phase, deferring: {signum} ({sig_name})")
+            return
+
+        if ignore_signals:
+            logger.warning(f"Shutdown signal received but ignored due to BOT_IGNORE_SIGNALS: {signum} ({sig_name})")
+            return
+
+        logger.info(f"Shutdown signal received: {signum} ({sig_name})")
+        shutdown_event.set()
+
     signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
 
@@ -71,7 +86,7 @@ def main():
             reset_daily_loss_guard()
             logger.info("✓ Daily loss guard cleared for today")
         except Exception as reset_err:  # pylint: disable=broad-except
-            logger.warning("Failed to reset daily loss guard: %s", reset_err)
+            logger.warning(f"Failed to reset daily loss guard: {reset_err}")
 
     # lazy import to avoid heavy deps at module import time
     from .broker.ibkr import IBKRBroker
@@ -84,9 +99,20 @@ def main():
         paper=not settings.broker.read_only,
     )
 
+    # Connect to Gateway before entering scheduler loop
+    logger.info(f"Connecting to Gateway at {settings.broker.host}:{settings.broker.port}...")
+    try:
+        broker.connect()
+        connecting = False  # Signal handler can now respond to shutdown signals
+        logger.info("✓ Gateway connected successfully")
+    except Exception as conn_err:  # pylint: disable=broad-except
+        connecting = False
+        logger.error(f"Failed to connect to Gateway: {conn_err}")
+        return
+
     try:
         # Pass dict-like view for now; scheduler will accept either object or dict
-        run_scheduler(broker, settings.model_dump())
+        run_scheduler(broker, settings.model_dump(), stop_event=shutdown_event)
     except KeyboardInterrupt:
         logger.info("Shutting down due to KeyboardInterrupt")
     finally:

@@ -5,7 +5,7 @@ from datetime import date as ddate
 from datetime import datetime
 from datetime import time as dtime
 from datetime import timezone
-from threading import Lock
+from threading import Event, Lock
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
@@ -546,10 +546,14 @@ def run_cycle(broker, settings: Dict[str, Any]):
         logger.debug("cycle_complete logging failed")
 
 
-def run_scheduler(broker, settings: Dict[str, Any]):
+def run_scheduler(broker, settings: Dict[str, Any], stop_event: Optional[Event] = None):
     interval_seconds = settings.get("schedule", {}).get("interval_seconds", 180)
     last_day = None
     while True:
+        if stop_event and stop_event.is_set():
+            logger.info("Stop requested; exiting scheduler loop")
+            break
+
         now = datetime.now(timezone.utc).replace(tzinfo=ZoneInfo("UTC"))
         if is_rth(now):
             try:
@@ -571,4 +575,11 @@ def run_scheduler(broker, settings: Dict[str, Any]):
                 # Reset daily loss alert flag for the new day
                 _LOSS_ALERTED_DATE["date"] = None
                 last_day = None
-        time.sleep(interval_seconds)
+
+        if stop_event:
+            # Wait with interruptible sleep so signals are honored promptly
+            if stop_event.wait(interval_seconds):
+                logger.info("Stop requested during sleep; exiting scheduler loop")
+                break
+        else:
+            time.sleep(interval_seconds)
