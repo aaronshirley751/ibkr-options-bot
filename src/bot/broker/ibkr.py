@@ -449,6 +449,7 @@ class IBKRBroker:
         bar_size: str = "1 min",
         what_to_show: str = "TRADES",
         use_rth: bool = True,
+        timeout: int = 60,
     ):
         """Fetch historical OHLCV bars as a pandas DataFrame indexed by time.
 
@@ -458,7 +459,7 @@ class IBKRBroker:
             bar_size: IBKR bar size (e.g., '1 min', '5 mins', '1 hour').
             what_to_show: Data type, default 'TRADES'.
             use_rth: Restrict to Regular Trading Hours.
-
+            timeout: Max seconds to wait for historical data (default 60s for market hours reliability).
         Returns:
             pd.DataFrame with columns [open, high, low, close, volume] indexed by timestamp.
         """
@@ -469,15 +470,23 @@ class IBKRBroker:
             import pandas as pd  # type: ignore
 
             contract = Stock(symbol, "SMART", "USD")
-            bars = self.ib.reqHistoricalData(
-                contract,
-                endDateTime="",
-                durationStr=duration,
-                barSizeSetting=bar_size,
-                whatToShow=what_to_show,
-                useRTH=use_rth,
-                formatDate=1,
-            )
+            # Set request timeout for market hours: ib_insync default (~10s) insufficient during high load
+            # 60s is conservative but necessary during peak market hours when Gateway is busy
+            old_timeout = self.ib.RequestTimeout
+            self.ib.RequestTimeout = timeout
+            try:
+                bars = self.ib.reqHistoricalData(
+                    contract,
+                    endDateTime="",
+                    durationStr=duration,
+                    barSizeSetting=bar_size,
+                    whatToShow=what_to_show,
+                    useRTH=use_rth,
+                    formatDate=1,
+                )
+            finally:
+                # Reset timeout to default for other operations
+                self.ib.RequestTimeout = old_timeout
             rows = [
                 {
                     "time": pd.to_datetime(getattr(b, "date", None)),
