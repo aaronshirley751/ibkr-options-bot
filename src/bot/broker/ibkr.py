@@ -516,6 +516,12 @@ class IBKRBroker:
             import pandas as pd  # type: ignore
 
             contract = Stock(symbol, "SMART", "USD")
+            
+            # CRITICAL FIX: Allow ib_insync to settle before making request
+            # If requests are made too quickly in sequence, ib_insync's internal queue gets overloaded
+            # This prevents the "first works, subsequent fail" pattern
+            self.ib.sleep(0.5)
+            
             # Set request timeout for market hours: ib_insync default (~10s) insufficient during high load
             old_timeout = self.ib.RequestTimeout
             self.ib.RequestTimeout = timeout
@@ -555,6 +561,11 @@ class IBKRBroker:
             finally:
                 # Reset timeout to default for other operations
                 self.ib.RequestTimeout = old_timeout
+                
+                # CRITICAL FIX: Allow ib_insync to process pending events and clean up internal state
+                # Without this, subsequent requests timeout due to stale state/event handlers
+                # This 1-second sleep prevents "first request works, subsequent fail" pattern
+                self.ib.sleep(1)
             
             # DEBUG: Log what was returned
             logger.info(f"[DEBUG] historical_prices({symbol}): raw bars count = {len(bars) if bars else 0}")
