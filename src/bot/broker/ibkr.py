@@ -511,11 +511,50 @@ class IBKRBroker:
         """
         if not self.is_connected():
             self.connect()
+
+        # Verify Gateway is actually responsive (not just connected)
+        if not self.is_gateway_healthy():
+            logger.bind(symbol=symbol, event="gateway_unhealthy").warning(
+                "Gateway health check failed before historical request, attempting reconnection"
+            )
+            try:
+                self.disconnect()
+                time.sleep(2)
+                self.connect()
+                if not self.is_gateway_healthy():
+                    logger.bind(symbol=symbol, event="gateway_reconnect_failed").error(
+                        "Gateway still unhealthy after reconnection"
+                    )
+                    import pandas as pd
+                    return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+            except Exception as reconn_err:
+                logger.bind(symbol=symbol, error=type(reconn_err).__name__).error(
+                    "Gateway reconnection failed: {}", type(reconn_err).__name__
+                )
+                import pandas as pd
+                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
         try:
             # import pandas lazily to avoid heavy import at module load
             import pandas as pd  # type: ignore
 
             contract = Stock(symbol, "SMART", "USD")
+
+            # Qualify contract before requesting data (prevents rejections for unknown contracts)
+            try:
+                qualified = self.ib.qualifyContracts(contract)
+                if not qualified or not contract.conId:
+                    logger.bind(symbol=symbol, event="contract_qualification_failed").warning(
+                        "Failed to qualify contract for {}", symbol
+                    )
+                    return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+                logger.bind(symbol=symbol, conId=contract.conId, event="contract_qualified").debug(
+                    "Contract qualified: conId={}", contract.conId
+                )
+            except Exception as qual_err:
+                logger.bind(symbol=symbol, error=type(qual_err).__name__, event="contract_qualification_error").warning(
+                    "Contract qualification error: {}", type(qual_err).__name__
+                )
             
             # CRITICAL FIX: Allow ib_insync to settle before making request
             # If requests are made too quickly in sequence, ib_insync's internal queue gets overloaded
@@ -558,6 +597,44 @@ class IBKRBroker:
                 )
                 request_elapsed = time.time() - request_start
                 logger.info(f"[HIST] Completed: symbol={symbol}, elapsed={request_elapsed:.2f}s, bars={len(bars) if bars else 0}")
+
+                # FALLBACK: If async method returned 0 bars, try synchronous method
+                if not bars or len(bars) == 0:
+                    logger.bind(symbol=symbol, event="historical_sync_fallback").info(
+                        "Async method returned 0 bars, attempting synchronous fallback"
+                    )
+                    try:
+                        # Reset timeout for sync attempt
+                        self.ib.RequestTimeout = timeout
+                        self.ib.sleep(0.5)  # Settle before sync request
+                        
+                        bars = self.ib.reqHistoricalData(
+                            contract,
+                            endDateTime="",
+                            durationStr=duration,
+                            barSizeSetting=bar_size,
+                            whatToShow=what_to_show,
+                            useRTH=use_rth,
+                            formatDate=1,
+                        )
+                        sync_elapsed = time.time() - request_start
+                        logger.bind(
+                            symbol=symbol,
+                            bars=len(bars) if bars else 0,
+                            elapsed=sync_elapsed,
+                            event="historical_sync_complete"
+                        ).info(
+                            "Synchronous fallback completed: {} bars in {:.2f}s",
+                            len(bars) if bars else 0,
+                            sync_elapsed
+                        )
+                    except Exception as sync_err:
+                        logger.bind(
+                            symbol=symbol,
+                            error=type(sync_err).__name__,
+                            event="historical_sync_error"
+                        ).warning("Synchronous fallback failed: {}", type(sync_err).__name__)
+                        bars = []
             finally:
                 # Reset timeout to default for other operations
                 self.ib.RequestTimeout = old_timeout
