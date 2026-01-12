@@ -61,10 +61,39 @@ class MonitoringSettings(BaseModel):
 
 
 class HistoricalSettings(BaseModel):
-    duration: str = Field(default="7200 S")
-    use_rth: bool = Field(default=False)
-    bar_size: str = Field(default="1 min")
-    what_to_show: str = Field(default="TRADES")
+    """Settings for historical data requests to IBKR API."""
+    
+    duration: str = Field(
+        default="3600 S",
+        description="IBKR duration string. Format: '<number> <unit>' where unit is S/D/W/M/Y. "
+                    "3600 S = 1 hour of bars. Smaller durations = faster fetches."
+    )
+    
+    use_rth: bool = Field(
+        default=True,
+        description="Use Regular Trading Hours only (9:30-16:00 ET). "
+                    "True = faster requests, less data. False = includes pre/after hours."
+    )
+    
+    bar_size: str = Field(
+        default="1 min",
+        description="Bar size: '1 min', '5 mins', '15 mins', '30 mins', '1 hour', etc."
+    )
+    
+    what_to_show: str = Field(
+        default="TRADES",
+        description="Data type: 'TRADES', 'ADJUSTED_LAST', 'BID', 'ASK', 'BID_ASK', 'HISTORICAL_VOLATILITY', 'OPTION_IMPLIED_VOL'"
+    )
+    
+    timeout: int = Field(
+        default=90,
+        ge=30,
+        le=300,
+        description="Max seconds to wait for historical data request. "
+                    "IBKR library has ~60s hardcoded limit, but asyncio wrapper may extend this. "
+                    "Recommended: 90-120 seconds for robustness."
+    )
+
 
 
 class Settings(BaseSettings):

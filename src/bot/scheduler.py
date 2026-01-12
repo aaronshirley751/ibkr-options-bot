@@ -72,6 +72,9 @@ class GatewayCircuitBreaker:
 
 _gateway_circuit_breaker = GatewayCircuitBreaker(failure_threshold=3, reset_timeout_seconds=300)
 
+# Symbol bar cache for fallback when fetch fails
+# Structure: { symbol: (bars, timestamp) }
+_symbol_bar_cache: Dict[str, tuple] = {}
 
 
 def is_rth(now_utc: datetime) -> bool:
@@ -228,15 +231,43 @@ def run_cycle(broker, settings: Dict[str, Any]):
                         )
                         _LOSS_ALERTED_DATE["date"] = ny.date()
                 return
-            # fetch recent 1-min bars; try multiple broker methods
+            # ============================================
+            # HISTORICAL DATA FETCH WITH EXPONENTIAL BACKOFF
+            # ============================================
+            retry_delays = [0, 5, 15]  # Retry at: immediately, then 5s, then 15s
             bars = None
             data_fetch_failed = False
-            try:
-                if hasattr(broker, "historical_prices"):
-                    logger.debug(
-                        "Requesting historical data: symbol={}, duration={}, use_rth={}, timeout={}",
-                        symbol, hist_duration, hist_use_rth, hist_timeout
+            last_error = None
+
+            for retry_idx, delay in enumerate(retry_delays):
+                # Sleep before retry (except first attempt)
+                if delay > 0:
+                    logger.bind(
+                        symbol=symbol,
+                        retry_number=retry_idx,
+                        delay_seconds=delay,
+                        event="historical_retry_sleep"
+                    ).info("Historical data retry: waiting {}s before attempt {}", delay, retry_idx + 1)
+                    time.sleep(delay)
+                
+                try:
+                    if not hasattr(broker, "historical_prices"):
+                        logger.warning("Broker does not support historical_prices method")
+                        break
+                    
+                    logger.bind(
+                        symbol=symbol,
+                        attempt=retry_idx + 1,
+                        duration=hist_duration,
+                        use_rth=hist_use_rth,
+                        timeout=hist_timeout,
+                        event="historical_request"
+                    ).debug(
+                        "Requesting historical data: duration={}, use_rth={}, timeout={}, attempt={}",
+                        hist_duration, hist_use_rth, hist_timeout, retry_idx + 1
                     )
+                    
+                    # Attempt to fetch bars
                     bars = _with_broker_lock(
                         broker.historical_prices,
                         symbol,
@@ -244,26 +275,88 @@ def run_cycle(broker, settings: Dict[str, Any]):
                         bar_size=hist_bar_size,
                         what_to_show=hist_what,
                         use_rth=hist_use_rth,
-                        timeout=hist_timeout,  # NEW: Pass timeout parameter
+                        timeout=hist_timeout,
                     )
-                elif hasattr(broker, "market_data"):
-                    # market_data may return historical bars or a snapshot Quote
-                    try:
-                        bars = _with_broker_lock(broker.market_data, symbol)
-                    except (ConnectionError, TimeoutError, AttributeError) as e:
-                        logger.debug("market_data failed for %s: %s", symbol, type(e).__name__)
+                    
+                    # Validate that we got meaningful data
+                    if bars is not None and hasattr(bars, '__len__') and len(bars) > 0:
+                        logger.bind(
+                            symbol=symbol,
+                            bars_retrieved=len(bars),
+                            attempt=retry_idx + 1,
+                            event="historical_success"
+                        ).info("Historical data success on attempt {}: {} bars", retry_idx + 1, len(bars))
+                        
+                        # Cache successful data for fallback in next cycle
+                        _symbol_bar_cache[symbol] = (bars, time.time())
+                        data_fetch_failed = False
+                        break  # Exit retry loop - success
+                    else:
+                        # Bars is None or empty - treat as fetch failure
                         bars = None
+                        if retry_idx == len(retry_delays) - 1:
+                            data_fetch_failed = True
+                            logger.bind(
+                                symbol=symbol,
+                                attempt=retry_idx + 1,
+                                event="historical_empty_response"
+                            ).warning("Historical data returned empty response")
+                    
+                except (TimeoutError, ConnectionError, Exception) as fetch_err:
+                    last_error = fetch_err
+                    logger.bind(
+                        symbol=symbol,
+                        attempt=retry_idx + 1,
+                        error_type=type(fetch_err).__name__,
+                        error_msg=str(fetch_err)[:100],
+                        event="historical_fetch_error"
+                    ).debug(
+                        "Historical data fetch error (attempt {}): {}",
+                        retry_idx + 1,
+                        type(fetch_err).__name__
+                    )
+                    
+                    if retry_idx == len(retry_delays) - 1:
+                        # All retries exhausted
                         data_fetch_failed = True
-            except (TimeoutError, Exception) as fetch_err:  # pylint: disable=broad-except
-                logger.bind(
-                    symbol=symbol,
-                    event="historical_data_timeout",
-                    error=str(fetch_err),
-                ).warning("Historical data fetch failed: {}", type(fetch_err).__name__)
-                data_fetch_failed = True
-                bars = None
-                # Record failure to circuit breaker for Gateway health detection
-                _gateway_circuit_breaker.record_failure()
+                        logger.bind(
+                            symbol=symbol,
+                            total_attempts=len(retry_delays),
+                            error_type=type(fetch_err).__name__,
+                            event="historical_fetch_failed_exhausted"
+                        ).warning(
+                            "Historical data fetch failed after {} attempts: {}",
+                            len(retry_delays),
+                            type(fetch_err).__name__
+                        )
+                        # Record failure to circuit breaker only after all retries
+                        _gateway_circuit_breaker.record_failure()
+
+            # ============================================
+            # FALLBACK TO CACHED BARS IF FETCH FAILED
+            # ============================================
+            if (bars is None or (hasattr(bars, '__len__') and len(bars) == 0)) and symbol in _symbol_bar_cache:
+                cached_bars, cache_time = _symbol_bar_cache[symbol]
+                age_seconds = time.time() - cache_time
+                
+                if age_seconds < 300:  # Cache valid for 5 minutes
+                    logger.bind(
+                        symbol=symbol,
+                        cache_age_seconds=age_seconds,
+                        cached_bars=len(cached_bars) if hasattr(cached_bars, '__len__') else 0,
+                        event="historical_cache_fallback"
+                    ).info(
+                        "Using cached bars for {} (age: {:.1f}s, bars: {})",
+                        symbol, age_seconds, len(cached_bars) if hasattr(cached_bars, '__len__') else 0
+                    )
+                    bars = cached_bars
+                else:
+                    logger.bind(
+                        symbol=symbol,
+                        cache_age_seconds=age_seconds,
+                        event="historical_cache_stale"
+                    ).debug("Cached bars too old ({}s), skipping", age_seconds)
+
 
             df1 = _to_df(bars) if bars is not None else []
             # Proceed only if we have a pandas DataFrame; else skip this symbol gracefully

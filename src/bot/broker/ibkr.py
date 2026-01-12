@@ -442,6 +442,52 @@ class IBKRBroker:
             logger.exception("failed to fetch account summary: %s", type(e).__name__)
             return {}
 
+    async def _fetch_historical_with_timeout(
+        self,
+        contract,
+        timeout: int,
+        **kwargs
+    ) -> list:
+        """Fetch historical bars with explicit asyncio timeout override.
+        
+        This bypasses ib_insync's internal hardcoded ~60s timeout by wrapping
+        the async request with asyncio.wait_for().
+        
+        Args:
+            contract: IB contract object
+            timeout: Maximum seconds to wait (overrides library default)
+            **kwargs: Arguments passed to reqHistoricalDataAsync
+            
+        Returns:
+            List of bar objects, or empty list on timeout/error
+            
+        Raises:
+            asyncio.TimeoutError: If request exceeds timeout (caught internally)
+        """
+        try:
+            bars = await asyncio.wait_for(
+                self.ib.reqHistoricalDataAsync(contract, **kwargs),
+                timeout=timeout
+            )
+            return bars if bars else []
+        except asyncio.TimeoutError:
+            logger.bind(
+                symbol=contract.symbol,
+                timeout=timeout,
+                event="historical_timeout_asyncio"
+            ).warning(
+                "Historical data timeout after {}s (asyncio override attempt)",
+                timeout
+            )
+            return []
+        except Exception as e:
+            logger.bind(
+                symbol=contract.symbol,
+                error_type=type(e).__name__,
+                event="historical_error"
+            ).exception("Historical data fetch error")
+            return []
+
     def historical_prices(
         self,
         symbol: str,
@@ -482,14 +528,27 @@ class IBKRBroker:
             request_start = time.time()
             
             try:
-                bars = self.ib.reqHistoricalData(
-                    contract,
-                    endDateTime="",
-                    durationStr=duration,
-                    barSizeSetting=bar_size,
-                    whatToShow=what_to_show,
-                    useRTH=use_rth,
-                    formatDate=1,
+                # Get or create asyncio event loop for this thread
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_closed():
+                        raise RuntimeError("Event loop is closed")
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                # Call async wrapper with explicit timeout override
+                bars = loop.run_until_complete(
+                    self._fetch_historical_with_timeout(
+                        contract,
+                        timeout=timeout,
+                        endDateTime="",
+                        durationStr=duration,
+                        barSizeSetting=bar_size,
+                        whatToShow=what_to_show,
+                        useRTH=use_rth,
+                        formatDate=1,
+                    )
                 )
                 request_elapsed = time.time() - request_start
                 logger.info(f"[HIST] Completed: symbol={symbol}, elapsed={request_elapsed:.2f}s, bars={len(bars) if bars else 0}")
