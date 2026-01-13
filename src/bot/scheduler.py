@@ -616,14 +616,12 @@ def run_cycle(broker, settings: Dict[str, Any]):
             except Exception as e:
                 logger.debug("alert_all failed: %s", type(e).__name__)
 
-    # concurrency: process symbols in a limited thread pool
-    max_workers = int(
-        settings.get("schedule", {}).get("max_concurrent_symbols", 2) or 1
-    )
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_symbol, sym): sym for sym in symbols}
-        for _ in as_completed(futures):
-            pass
+    # concurrency: process symbols sequentially to ensure thread safety with IBKR connection
+    # ThreadPoolExecutor was causing issues with asyncio event loop management in ib_insync
+    # Since we typically trade 1-5 symbols, sequential processing is acceptable for stability
+    for sym in symbols:
+        process_symbol(sym)
+
 
     # Emit end-of-cycle event for monitoring/analytics
     duration = round(time.time() - cycle_start, 3)

@@ -442,52 +442,6 @@ class IBKRBroker:
             logger.exception("failed to fetch account summary: %s", type(e).__name__)
             return {}
 
-    async def _fetch_historical_with_timeout(
-        self,
-        contract,
-        timeout: int,
-        **kwargs
-    ) -> list:
-        """Fetch historical bars with explicit asyncio timeout override.
-        
-        This bypasses ib_insync's internal hardcoded ~60s timeout by wrapping
-        the async request with asyncio.wait_for().
-        
-        Args:
-            contract: IB contract object
-            timeout: Maximum seconds to wait (overrides library default)
-            **kwargs: Arguments passed to reqHistoricalDataAsync
-            
-        Returns:
-            List of bar objects, or empty list on timeout/error
-            
-        Raises:
-            asyncio.TimeoutError: If request exceeds timeout (caught internally)
-        """
-        try:
-            bars = await asyncio.wait_for(
-                self.ib.reqHistoricalDataAsync(contract, **kwargs),
-                timeout=timeout
-            )
-            return bars if bars else []
-        except asyncio.TimeoutError:
-            logger.bind(
-                symbol=contract.symbol,
-                timeout=timeout,
-                event="historical_timeout_asyncio"
-            ).warning(
-                "Historical data timeout after {}s (asyncio override attempt)",
-                timeout
-            )
-            return []
-        except Exception as e:
-            logger.bind(
-                symbol=contract.symbol,
-                error_type=type(e).__name__,
-                event="historical_error"
-            ).exception("Historical data fetch error")
-            return []
-
     def historical_prices(
         self,
         symbol: str,
@@ -556,94 +510,81 @@ class IBKRBroker:
                     "Contract qualification error: {}", type(qual_err).__name__
                 )
             
-            # CRITICAL FIX: Allow ib_insync to settle before making request
-            # If requests are made too quickly in sequence, ib_insync's internal queue gets overloaded
-            # This prevents the "first works, subsequent fail" pattern
+            # Allow ib_insync to settle
             self.ib.sleep(0.5)
             
-            # Set request timeout for market hours: ib_insync default (~10s) insufficient during high load
+            # Set request timeout
             old_timeout = self.ib.RequestTimeout
             self.ib.RequestTimeout = timeout
             
-            # Log request parameters for debugging timeout issues
             logger.info(
                 f"[HIST] Requesting: symbol={symbol}, duration={duration}, "
                 f"use_rth={use_rth}, timeout={timeout}s, RequestTimeout={self.ib.RequestTimeout}"
             )
             request_start = time.time()
+            bars = []
             
+            # --- SIMPLIFIED REQUEST LOGIC ---
             try:
-                # Get or create asyncio event loop for this thread
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_closed():
-                        raise RuntimeError("Event loop is closed")
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+                # Direct blocking call to ib_insync (thread-safe within its architecture)
+                # This matches the pattern proven working in diagnostic_test.py
+                bars = self.ib.reqHistoricalData(
+                    contract,
+                    endDateTime="",
+                    durationStr=duration,
+                    barSizeSetting=bar_size,
+                    whatToShow=what_to_show,
+                    useRTH=use_rth,
+                    formatDate=1,
+                    keepUpToDate=False,
+                    chartOptions=[]
+                )
+                
+                request_elapsed = time.time() - request_start
+                logger.info(f"[HIST] Completed: symbol={symbol}, elapsed={request_elapsed:.2f}s, bars={len(bars) if bars else 0}")
+                
+            except Exception as e:
+                logger.bind(
+                    symbol=symbol,
+                    error=type(e).__name__,
+                    event="historical_request_error"
+                ).warning(f"Primary historical data request failed: {e}")
+                bars = []
 
-                # Call async wrapper with explicit timeout override
-                bars = loop.run_until_complete(
-                    self._fetch_historical_with_timeout(
+            # --- ROBUST RETRY LOGIC ---
+            if not bars:
+                logger.bind(symbol=symbol, event="historical_retry").warning(
+                    f"Primary request returned 0 bars for {symbol}. Attempting retry in 1s..."
+                )
+                self.ib.sleep(1.0)
+                
+                try:
+                    # Retry with same parameters
+                    bars = self.ib.reqHistoricalData(
                         contract,
-                        timeout=timeout,
                         endDateTime="",
                         durationStr=duration,
                         barSizeSetting=bar_size,
                         whatToShow=what_to_show,
                         useRTH=use_rth,
                         formatDate=1,
+                        keepUpToDate=False,
+                        chartOptions=[]
                     )
-                )
-                request_elapsed = time.time() - request_start
-                logger.info(f"[HIST] Completed: symbol={symbol}, elapsed={request_elapsed:.2f}s, bars={len(bars) if bars else 0}")
+                    retry_elapsed = time.time() - request_start
+                    logger.info(f"[HIST] Retry Completed: symbol={symbol}, elapsed={retry_elapsed:.2f}s, bars={len(bars) if bars else 0}")
+                except Exception as retry_err:
+                    logger.bind(
+                        symbol=symbol,
+                        error=type(retry_err).__name__,
+                        event="historical_retry_error"
+                    ).error(f"Retry historical data request failed: {retry_err}")
+                    bars = []
 
-                # FALLBACK: If async method returned 0 bars, try synchronous method
-                if not bars or len(bars) == 0:
-                    logger.bind(symbol=symbol, event="historical_sync_fallback").info(
-                        "Async method returned 0 bars, attempting synchronous fallback"
-                    )
-                    try:
-                        # Reset timeout for sync attempt
-                        self.ib.RequestTimeout = timeout
-                        self.ib.sleep(0.5)  # Settle before sync request
-                        
-                        bars = self.ib.reqHistoricalData(
-                            contract,
-                            endDateTime="",
-                            durationStr=duration,
-                            barSizeSetting=bar_size,
-                            whatToShow=what_to_show,
-                            useRTH=use_rth,
-                            formatDate=1,
-                        )
-                        sync_elapsed = time.time() - request_start
-                        logger.bind(
-                            symbol=symbol,
-                            bars=len(bars) if bars else 0,
-                            elapsed=sync_elapsed,
-                            event="historical_sync_complete"
-                        ).info(
-                            "Synchronous fallback completed: {} bars in {:.2f}s",
-                            len(bars) if bars else 0,
-                            sync_elapsed
-                        )
-                    except Exception as sync_err:
-                        logger.bind(
-                            symbol=symbol,
-                            error=type(sync_err).__name__,
-                            event="historical_sync_error"
-                        ).warning("Synchronous fallback failed: {}", type(sync_err).__name__)
-                        bars = []
-            finally:
-                # Reset timeout to default for other operations
-                self.ib.RequestTimeout = old_timeout
-                
-                # CRITICAL FIX: Allow ib_insync to process pending events and clean up internal state
-                # Without this, subsequent requests timeout due to stale state/event handlers
-                # This 1-second sleep prevents "first request works, subsequent fail" pattern
-                self.ib.sleep(1)
+            # Restore timeout
+            self.ib.RequestTimeout = old_timeout
             
+            # --- DATAFRAME CONVERSION ---
             # DEBUG: Log what was returned
             logger.info(f"[DEBUG] historical_prices({symbol}): raw bars count = {len(bars) if bars else 0}")
             if bars and len(bars) > 0:
@@ -661,26 +602,23 @@ class IBKRBroker:
                 }
                 for b in (bars or [])
             ]
-            logger.info(f"[DEBUG] Converted to rows: {len(rows)} rows")
             
             if not rows:
                 logger.warning(f"[DEBUG] No rows after conversion, returning empty DataFrame")
                 return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])  # type: ignore[name-defined]
             
             df = pd.DataFrame(rows)
-            logger.info(f"[DEBUG] DataFrame created: shape={df.shape}, columns={list(df.columns)}")
             
             if "time" in df.columns:
                 df = df.set_index("time")
-                logger.info(f"[DEBUG] After set_index: shape={df.shape}, index name={df.index.name}")
             
             logger.info(f"[DEBUG] Returning DataFrame with {len(df)} rows for {symbol}")
             return df
+            
         except Exception:
             logger.exception("historical_prices failed for %s", symbol)
             try:
                 import pandas as pd  # type: ignore
-
                 return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])  # type: ignore[name-defined]
             except Exception:
                 return []  # fallback for environments without pandas

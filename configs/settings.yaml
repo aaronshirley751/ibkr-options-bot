@@ -2,7 +2,7 @@
 broker:
   host: "192.168.7.205"
   port: 4001
-  client_id: 262  # Default client ID for stable runs
+  client_id: 263  # Changed to avoid conflict with stuck process
   read_only: false
 
 paper_trading: true
