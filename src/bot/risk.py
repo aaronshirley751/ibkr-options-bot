@@ -30,9 +30,24 @@ def position_size(
     """
     if equity <= 0 or option_premium <= 0 or stop_loss_pct <= 0:
         return 0
-    raw = (equity * max_risk_pct) / (option_premium * stop_loss_pct)
-    sz = floor(raw)
-    return max(1, sz)
+    
+    # 1. Risk-based sizing (Kelly-like)
+    # How many contracts can we handle based on max loss?
+    raw_shares = (equity * max_risk_pct) / (option_premium * stop_loss_pct)
+    size_risk = floor(raw_shares / 100.0)
+    # Allow at least 1 contract if within risk tolerance boundaries or logical rounding
+    size_risk = max(1, size_risk)
+
+    # 2. Cash-based capping (The "Cash Guard")
+    # Cap total cost at 95% of equity to avoid margin rejection
+    cost_per_contract = option_premium * 100.0
+    max_cost = equity * 0.95
+    size_cash = floor(max_cost / cost_per_contract)
+
+    # 3. Final sizing: strict minimum of both
+    sz = min(size_risk, size_cash)
+    
+    return int(sz)
 
 
 def guard_daily_loss(

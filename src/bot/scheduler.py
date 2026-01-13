@@ -471,7 +471,12 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
             if action in ("BUY", "SELL", "BUY_CALL", "BUY_PUT"):
                 # pick option using refined selection
-                direction = "C" if action.startswith("BUY") else "P"
+                # Determine Call/Put based on signal.
+                # "BUY" or "BUY_CALL" -> Call (Bullish)
+                # "SELL" or "BUY_PUT" -> Put (Bearish) - We BUY Puts for bearish signals, not Short Stock
+                is_bullish = action in ("BUY", "BUY_CALL")
+                direction = "C" if is_bullish else "P"
+                
                 last_under_q = _with_broker_lock(broker.market_data, symbol)
                 last_under = getattr(last_under_q, "last", 0.0)
                 cfg_opts = settings.get("options", {})
@@ -538,9 +543,10 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 # submit order via broker.place_order using OrderTicket dataclass
                 from .broker.base import OrderTicket
 
+                # We always BUY to open (Long Call or Long Put)
                 ticket = OrderTicket(
                     contract=opt,
-                    action=("BUY" if action.startswith("BUY") else "SELL"),
+                    action="BUY",
                     quantity=size,
                     order_type="MKT",
                     take_profit_pct=cfg_risk.get("take_profit_pct"),

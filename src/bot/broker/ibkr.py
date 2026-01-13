@@ -152,15 +152,20 @@ class IBKRBroker:
             contract = Stock(symbol, "SMART", "USD")
             symbol_str = symbol
         else:
-            # Assume it's an OptionContract with attributes: symbol, expiry, strike, right
+            # If it's already a Contract-compatible object (like OptionContract from options.py), 
+            # we should avoid reconstructing it locally if possible, or reconstruct accurately.
+            # Our options.py returns OptionContract, but we've seen rejections when rebuilding it.
+            # Ideally, we map attributes carefully.
             contract = Option(
-                getattr(symbol, "symbol", ""),
-                getattr(symbol, "expiry", ""),
-                float(getattr(symbol, "strike", 0.0)),
-                getattr(symbol, "right", "C"),
-                "SMART"
+                symbol=getattr(symbol, "symbol", ""),
+                lastTradeDateOrContractMonth=getattr(symbol, "expiry", ""),
+                strike=float(getattr(symbol, "strike", 0.0)),
+                right=getattr(symbol, "right", "C"),
+                exchange="SMART",
+                multiplier="100",
+                currency="USD"
             )
-            symbol_str = f"{getattr(symbol, 'symbol', '')} {getattr(symbol, 'expiry', '')} {getattr(symbol, 'strike', 0.0)} {getattr(symbol, 'right', 'C')}"
+            symbol_str = f"{contract.symbol} {contract.lastTradeDateOrContractMonth} {contract.strike} {contract.right}"
         
         async def _get_quote():
             # Qualify contract first
@@ -269,6 +274,28 @@ class IBKRBroker:
                 )
         else:
             expiry = expirations[0]
+
+        # REFACTOR: Validate strikes for this specific expiry to avoid "phantom contracts"
+        # reqSecDefOptParams returns a superset of strikes. Not all exist for every expiry.
+        # We query reqContractDetails to get the exact list of valid strikes for this expiry.
+        try:
+            # Wildcard search for the specific expiry we chose
+            logger.info(f"Validating contracts for expiry {expiry} via reqContractDetails...")
+            validate_contract = Option(symbol, lastTradeDateOrContractMonth=expiry, exchange="SMART", currency="USD")
+            
+            # Use sync call (safe within IB context usually) or util.run if needed. 
+            # Given previous pattern used util.run for params, we'll try standard sync first.
+            # If this hangs, we may need util.run(ib.reqContractDetailsAsync(...))
+            details = self.ib.reqContractDetails(validate_contract)
+            
+            if details:
+                valid_strikes = sorted(list(set(d.contract.strike for d in details)))
+                logger.info(f"Broadcast {len(valid_strikes)} valid strikes for {expiry} (was {len(strikes)} in cache)")
+                strikes = valid_strikes
+            else:
+                logger.warning(f"No contract details found for {symbol} {expiry}; falling back to cached strikes (risky)")
+        except Exception as e:
+            logger.warning(f"Failed to validate strikes via reqContractDetails: {e}; falling back to cached strikes")
 
         # get last price to find ATM
         quote = self.market_data(symbol)

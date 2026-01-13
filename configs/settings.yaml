@@ -2,29 +2,29 @@
 broker:
   host: "192.168.7.205"
   port: 4001
-  client_id: 263  # Changed to avoid conflict with stuck process
+  client_id: 264  # Changed to avoid conflict with stuck process
   read_only: false
 
-paper_trading: true
-dry_run: true
+paper_trading: false
+dry_run: false
 
-symbols: ["SPY"]  # Single symbol for Phase 3 isolation testing
+symbols: ["IWM"]  # Russell 2000 for Small Account Growth (Lower contract price)
 
 schedule:
-  interval_seconds: 600  # 10-minute cycles for Phase 3 retry (conservative load reduction)
-  max_concurrent_symbols: 1  # Sequential processing for isolation
+  interval_seconds: 180  # Standard 3-minute interval
+  max_concurrent_symbols: 1  # Sequential processing for stability
 
 risk:
-  max_daily_loss_pct: 0.15
-  max_risk_per_trade_pct: 0.01
-  take_profit_pct: 0.5
-  stop_loss_pct: 0.2
+  max_daily_loss_pct: 0.15 # Stop trading if we lose 15% of account in a day
+  max_risk_pct_per_trade: 0.50 # "Growth Mode": Allocate up to 50% of account per trade
+  take_profit_pct: 0.15 # Scalp target: +15% gain
+  stop_loss_pct: 0.10 # Tight stop: -10% loss
 
 options:
   expiry: "weekly"
-  moneyness: "atm"
-  max_spread_pct: 2.0
-  min_volume: 100
+  moneyness: "atm" # At-The-Money (Better liquidity/spreads for IWM)
+  max_spread_pct: 2.5 # Slightly wider allowed spread for IWM
+  min_volume: 50 # Lower volume threshold for IWM vs SPY
   strike_count: 3  # Reduced from 5 for 40% fewer options requests
 
 # Historical data configuration (prevents timeout issues)

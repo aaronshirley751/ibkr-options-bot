@@ -4,27 +4,27 @@ Lightweight scaffold for an IBKR options trading bot with clean layers (broker, 
 
 ---
 
-## Session Summary (2026-01-07 Extended RTH) ⭐ PARTIAL PASS
+## Session Summary (2026-01-13 Live Launch) 🚀 LIVE ACTIVE
 
-**Connectivity solid; historical data timed out after first cycle. Discord alerts already verified in prior session.**
+**System stabilized, critical bugs fixed, and deployed to Live Trading.**
 
 ### Findings (This Run)
-1. ✅ **Broker wiring good** - Reconnect to 192.168.7.205:4001 (clientId 213) succeeded; option chain returned 34 expirations/427 strikes.
-2. ✅ **Dry-run safety** - First cycle simulated order and launched emulated OCO.
-3. ⚠️ **Historical data timeouts** - `reqHistoricalData` timed out every subsequent cycle → scheduler skipped for insufficient bars (<30).
-4. ⚠️ **Exit** - Job ended with code 130 after repeated timeouts (no crashes).
+1. ✅ **Critical Fixes Applied** - Resolved "Blindness" (missing contract attrs) and "Phantom Strike" (Error 200) bugs in `ibkr.py`.
+2. ✅ **Validation Success** - Validated via 15m and 120s test runs. 
+3. ✅ **Live Deployment** - Bot ran successfully in Live Mode (Real Money) for 90 mins with IWM.
+4. ✅ **Safety Confirmed** - Strict filters correctly prevented low-quality trades in choppy afternoon market.
 
-### Recommended Bot Improvements
-1. Add backoff/early-exit when repeated historical timeouts occur (and/or try `use_rth=False`, longer duration, shorter bar window) to avoid tight retry loops.
-2. Optional startup hook to clear today’s loss-guard entry in `logs/daily_state.json` when `dry_run`/off-hours, gated by a setting like `risk.reset_daily_guard_on_start` (default `false`).
+### Current Status
+- **Mode**: Live Trading (Real Money)
+- **Asset**: IWM
+- **State**: Monitoring (Waiting for Signal)
+
+### Latest Reports
+- [FINAL_SESSION_REPORT_2026_01_13.md](FINAL_SESSION_REPORT_2026_01_13.md)
+- [NEXT_SESSION_START_HERE.md](NEXT_SESSION_START_HERE_20260114.md)
 
 ### Current Config Changes
-- [configs/settings.yaml](configs/settings.yaml) now points to gateway `192.168.7.205` with `client_id: 213` for extended runs.
-
-### Next Steps
-1. Run during market hours with improved historical data handling/backoff to confirm multi-cycle behavior.
-2. Implement optional loss-guard reset flag (keep disabled by default to protect live trading).
-3. Re-run extended dry-run and analyze with `scripts/analyze_logs.py --bot-log <file>`.
+- [configs/settings.yaml](configs/settings.yaml) set to `dry_run: false`, `symbols: ["IWM"]`.
 
 📖 **Previous Session**: [SESSION_2026-01-07_COMPLETE.md](SESSION_2026-01-07_COMPLETE.md)
 
@@ -456,5 +456,5 @@ Get-Content -Tail 80 -Wait logs/bot.log
   - Historical fetch shows `[HIST] Completed` with 60+ bars
   - No circuit breaker opens; no timeouts
 
-��� Detailed summary: [SIGNAL_HANDLING_FIX_SUMMARY.md](SIGNAL_HANDLING_FIX_SUMMARY.md)
+��� Detailed summary: [SIGNAL_HANDLING_FIX_SUMMARY.md](SIGNAL_HANDLING_FIX_SUMMARY.md)
 
