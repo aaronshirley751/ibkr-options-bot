@@ -4,7 +4,30 @@ Lightweight scaffold for an IBKR options trading bot with clean layers (broker, 
 
 ---
 
-## Session Summary (2026-01-13 Live Launch) 🚀 LIVE ACTIVE
+## Session Summary (2026-01-13 Strategy Pivot) 🚨 TSLA TREND FOLLOWING
+
+**Strategic pivot to "Option B": High-Volatility Trend Following on TSLA.**
+
+### Major Changes
+1.  **Pivot to TSLA**: Abandoned SPY/IWM scalping due to small account limitations.
+2.  **Strategy "Option B"**: Implemented "Whale Entry" + "Dynamic Trailing Stop" (Hourly Close < EMA-20).
+3.  **Dynamic Logic**: Patched `scheduler.py` to check 1-hour EMA-20 every cycle and close positions if trend breaks.
+4.  **Risk Profile**: 80% Risk per trade (Growth Mode), No Take Profit, 5% Hard Stop.
+
+### Current Status
+-   **Mode**: LIVE READY (Configured in `settings.yaml`)
+-   **Asset**: TSLA
+-   **Strategy**: Dynamic Trend Following (Long-term hold potential)
+
+### Next Steps
+1.  **Dry Run**: Verify 1-Hour EMA calculation logic during market hours.
+2.  **Live Execution**: Monitor first entry carefully.
+
+📖 **Next Session Guide**: [NEXT_SESSION_START_HERE.md](NEXT_SESSION_START_HERE_20260114.md)
+
+---
+
+## Previous Session Summary (2026-01-13 Live Launch) 🚀 LIVE ACTIVE
 
 **System stabilized, critical bugs fixed, and deployed to Live Trading.**
 

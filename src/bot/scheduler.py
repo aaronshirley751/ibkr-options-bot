@@ -231,6 +231,97 @@ def run_cycle(broker, settings: Dict[str, Any]):
                         )
                         _LOSS_ALERTED_DATE["date"] = ny.date()
                 return
+
+            # ============================================
+            # DYNAMIC POSITION MANAGEMENT (OPTION B)
+            # ============================================
+            try:
+                # Check if we have an open option position for this symbol
+                current_positions = _with_broker_lock(broker.positions)
+                my_position = None
+                
+                for p in current_positions:
+                    # Start with safety checks for dict keys
+                    if not isinstance(p, dict): continue
+                    c = p.get('contract')
+                    if not c: continue
+                    
+                    # Check if symbol matches and it is an option
+                    c_symbol = getattr(c, 'symbol', '')
+                    c_sectype = getattr(c, 'secType', '')
+                    
+                    if c_symbol == symbol and c_sectype == 'OPT':
+                        if p.get('position', 0) > 0:
+                            my_position = p
+                            break
+                
+                if my_position is not None:
+                    pos_contract = my_position['contract']
+                    pos_qty = my_position['position']
+                    logger.bind(symbol=symbol, position=pos_qty).info("Managing existing position - Checking trends...")
+                    
+                    # Fetch 1-hour bars for EMA calculation (Need ~2 days for 20 EMA warmup)
+                    bars_1h = _with_broker_lock(
+                        broker.historical_prices,
+                        symbol,
+                        duration="2 D", 
+                        bar_size="1 hour",
+                        what_to_show="TRADES",
+                        use_rth=True
+                    )
+                    
+                    df_1h = _to_df(bars_1h)
+                    
+                    if hasattr(df_1h, 'empty') and not df_1h.empty and len(df_1h) > 20:
+                        # Calculate EMA 20
+                        df_1h['ema_20'] = df_1h['close'].ewm(span=20, adjust=False).mean()
+                        
+                        last_close = float(df_1h['close'].iloc[-1])
+                        current_ema = float(df_1h['ema_20'].iloc[-1])
+                        
+                        right = getattr(pos_contract, 'right', '') # 'C' or 'P'
+                        should_close = False
+                        reason_msg = ""
+                        
+                        # Dynamic Trailing Logic
+                        if right == 'C':
+                            if last_close < current_ema:
+                                should_close = True
+                                reason_msg = f"Trend Broken (Call): Price {last_close:.2f} < EMA {current_ema:.2f}"
+                        elif right == 'P':
+                            if last_close > current_ema:
+                                should_close = True
+                                reason_msg = f"Trend Broken (Put): Price {last_close:.2f} > EMA {current_ema:.2f}"
+                        
+                        if should_close:
+                            logger.info(f"EXIT TRIGGER: {reason_msg}")
+                            
+                            # Close Position
+                            from .broker.base import OrderTicket
+                            close_ticket = OrderTicket(
+                                contract=pos_contract,
+                                action="SELL",
+                                quantity=pos_qty,
+                                order_type="MKT"
+                            )
+                            
+                            if settings.get("dry_run"):
+                                logger.info("Dry Run: Would SELL to Close position.")
+                            else:
+                                close_id = _with_broker_lock(broker.place_order, close_ticket)
+                                trade_alert(settings, stage="Exit", symbol=symbol, action="SELL", 
+                                          quantity=pos_qty, price=0.0, order_id=str(close_id), pnl="DYNAMIC")
+                        else:
+                            logger.info(f"HOLDING: Trend intact. Price {last_close:.2f} vs EMA {current_ema:.2f}")
+                            
+                    # Start of cycle with existing position -> Skip new entry scan
+                    return
+
+            except Exception as e_pos:
+                logger.error(f"Error in position management: {e_pos}")
+                # Continue to allow data fetch if this fails, or return to be safe?
+                # Safer to continue, but maybe log heavy error.
+
             # ============================================
             # HISTORICAL DATA FETCH WITH EXPONENTIAL BACKOFF
             # ============================================
@@ -443,11 +534,14 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 del _timeout_tracker[symbol]
 
             # compute scalp signal on 1-min bars
-            scalp = scalp_signal(df1)  # type: ignore[arg-type]
+            # SCALP DISABLED FOR OPTION B STRATEGY
+            # scalp = scalp_signal(df1)  # type: ignore[arg-type]
+            scalp = {"signal": "HOLD", "confidence": 0.0}
 
-            # compute whale on 60-min resample (if requested)
+            # compute whale on 60-min resample (Always Active for Option B)
             whale = {"signal": "HOLD", "confidence": 0.0}
-            if settings.get("mode") in ("hybrid", "growth"):
+            # Force enable whale check regardless of 'mode' setting
+            if True: 
                 resample = getattr(df1, "resample", None)
                 if callable(resample):
                     res = resample("60min", label="right", closed="right")

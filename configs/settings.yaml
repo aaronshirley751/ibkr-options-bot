@@ -8,17 +8,17 @@ broker:
 paper_trading: false
 dry_run: false
 
-symbols: ["IWM"]  # Russell 2000 for Small Account Growth (Lower contract price)
+symbols: ["TSLA"]  # Tesla for Dynamic Trend Following (Volatile Growth)
 
 schedule:
   interval_seconds: 180  # Standard 3-minute interval
   max_concurrent_symbols: 1  # Sequential processing for stability
 
 risk:
-  max_daily_loss_pct: 0.15 # Stop trading if we lose 15% of account in a day
-  max_risk_pct_per_trade: 0.50 # "Growth Mode": Allocate up to 50% of account per trade
-  take_profit_pct: 0.15 # Scalp target: +15% gain
-  stop_loss_pct: 0.10 # Tight stop: -10% loss
+  max_daily_loss_pct: 0.15 
+  max_risk_pct_per_trade: 0.80 # Aggressive: 80% of account per trade (Small account growth)
+  take_profit_pct: null # Dynamic Exit (EMA Trailing)
+  stop_loss_pct: 0.05 # Hard Stop: -5% Option (Survival)
 
 options:
   expiry: "weekly"
