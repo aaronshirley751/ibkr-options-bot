@@ -103,7 +103,7 @@ def whale_rules(df_60min: pd.DataFrame, symbol: str) -> Dict[str, Any]:
         strength = (last_close - high_20) / high_20 if high_20 != 0 else 0.0
         vol_score = min(1.0, last_vol / (avg_vol or 1))
         confidence = min(
-            1.0, WHALE_STRENGTH_WEIGHT * min(1.0, strength * 5) + WHALE_VOLUME_WEIGHT * vol_score
+            1.0, WHALE_STRENGTH_WEIGHT * min(1.0, strength * 100) + WHALE_VOLUME_WEIGHT * vol_score
         )
 
     # BUY PUT if 60m close < low with volume spike
@@ -112,7 +112,7 @@ def whale_rules(df_60min: pd.DataFrame, symbol: str) -> Dict[str, Any]:
         strength = (low_20 - last_close) / (low_20 or 1)
         vol_score = min(1.0, last_vol / (avg_vol or 1))
         confidence = min(
-            1.0, WHALE_STRENGTH_WEIGHT * min(1.0, strength * 5) + WHALE_VOLUME_WEIGHT * vol_score
+            1.0, WHALE_STRENGTH_WEIGHT * min(1.0, strength * 100) + WHALE_VOLUME_WEIGHT * vol_score
         )
 
     if signal != "HOLD":

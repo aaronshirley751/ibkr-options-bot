@@ -96,7 +96,7 @@ def scalp_signal(df: pd.DataFrame) -> Dict[str, Any]:
         # confidence based on strength of ema gap and rsi position
         gap = max(0.0, (ema_fast - ema_slow) / ema_slow) if ema_slow != 0 else 0.0
         rsi_score = (rsi_val - RSI_BUY_LOW) / (RSI_BUY_HIGH - RSI_BUY_LOW)
-        confidence = min(1.0, EMA_WEIGHT * min(1.0, gap * 5) + RSI_WEIGHT * rsi_score)
+        confidence = min(1.0, EMA_WEIGHT * min(1.0, gap * 500) + RSI_WEIGHT * rsi_score)
 
     # SELL if ema_fast<ema_slow or rsi < RSI_SELL_THRESHOLD
     elif ema_fast < ema_slow or rsi_val < RSI_SELL_THRESHOLD:
@@ -106,6 +106,6 @@ def scalp_signal(df: pd.DataFrame) -> Dict[str, Any]:
             (ema_slow - ema_fast) / (ema_fast if ema_fast != 0 else ema_slow or 1.0),
         )
         rsi_score = max(0.0, (RSI_SELL_THRESHOLD - rsi_val) / RSI_SELL_THRESHOLD)
-        confidence = min(1.0, EMA_WEIGHT * min(1.0, gap * 5) + RSI_WEIGHT * rsi_score)
+        confidence = min(1.0, EMA_WEIGHT * min(1.0, gap * 500) + RSI_WEIGHT * rsi_score)
 
     return {"signal": signal, "confidence": round(float(confidence), 3)}

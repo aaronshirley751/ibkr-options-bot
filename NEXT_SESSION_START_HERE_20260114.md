@@ -16,29 +16,27 @@ We have pivoted from a generic SPY/IWM scalp strategy to a **High-Volatility Tre
 - **Logic:** `scheduler.py` has been patched to include a "Dynamic Position Management" block that checks the 1-hour chart against the EMA-20 every cycle.
 
 ### 📋 Checklist for Next Session
-1. **Verify Live Connection:**
-   Ensure IBKR Gateway is running and `settings.yaml` points to the correct port (usually `4001` or `4002`).
-   ```bash
-   make ibkr-test
-   ```
+1. **Verify Live Connection:** ✅ **VERIFIED**
+   Connected to 192.168.7.205:4001.
 
-2. **Check Configuration:**
-   Verify `configs/settings.yaml` matches the new strategy:
+2. **Check Configuration:** ✅ **VERIFIED**
    - `symbols`: `["TSLA"]`
    - `max_risk_pct_per_trade`: `0.80`
-   - `take_profit_pct`: `null` (CRITICAL for trailing stop)
+   - `take_profit_pct`: `null` (Fixed code to allow this)
    - `stop_loss_pct`: `0.05`
+   - `dry_run`: `true`
 
-3. **Dry Run (Recommended):**
-   Run the bot in dry-run mode for 1-2 hours to ensure the EMA calculation logic is retrieving data correctly during RTH (Regular Trading Hours).
+3. **Dry Run (IN PROGRESS):**
+   The bot logic and data fetching have been verified. Run the bot now and leave it running for the session to validate the EMA logic during RTH.
    ```bash
    python -m src.bot.app
    ```
-   *Note: Ensure `dry_run: true` in `settings.yaml` or env vars.*
+   *Plan: Validate 1-Hour EMA calculations -> Stop Bot -> Switch to Live -> Restart.*
 
 4. **Monitor Logs:**
    Watch for the new log line:
    `"[DYNAMIC EXIT] Checking TSLA price ... vs EMA-20 ..."`
+   *(Note: This logic only triggers when you have an open position. Since we are starting fresh, look for "Cycle decision" logs first.)*
 
 ### ⚠️ Important Notes
 - **Account Sizing:** The strategy uses 80% risk per trade. This is intentional for the "Home Run" growth phase.

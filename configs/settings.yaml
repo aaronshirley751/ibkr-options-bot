@@ -11,7 +11,7 @@ dry_run: false
 symbols: ["TSLA"]  # Tesla for Dynamic Trend Following (Volatile Growth)
 
 schedule:
-  interval_seconds: 180  # Standard 3-minute interval
+  interval_seconds: 15  # Reduced to 15s for high-frequency checks
   max_concurrent_symbols: 1  # Sequential processing for stability
 
 risk:
@@ -29,7 +29,7 @@ options:
 
 # Historical data configuration (prevents timeout issues)
 historical:
-  duration: "3600 S"      # 1 hour of data (was defaulting to 7200 S / 2 hours)
+  duration: "4 D"         # 4 days of data to ensure >20 hourly bars for EMA
   use_rth: true           # Regular Trading Hours only (faster than extended hours)
   bar_size: "1 min"       # 1-minute bars
   what_to_show: "TRADES"  # Trade data

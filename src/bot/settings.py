@@ -18,7 +18,7 @@ class BrokerSettings(BaseModel):
 class RiskSettings(BaseModel):
     max_risk_pct_per_trade: float = Field(default=0.01, ge=0.0, le=1.0)
     max_daily_loss_pct: float = Field(default=0.15, ge=0.0, le=1.0)
-    take_profit_pct: float = Field(default=0.30, ge=0.0, le=5.0)
+    take_profit_pct: Optional[float] = Field(default=None)
     stop_loss_pct: float = Field(default=0.20, ge=0.0, le=1.0)
     whale_alloc_pct: float = Field(default=0.15, ge=0.0, le=1.0)
     reset_daily_guard_on_start: bool = Field(default=False)

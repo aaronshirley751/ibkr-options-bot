@@ -260,11 +260,12 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     pos_qty = my_position['position']
                     logger.bind(symbol=symbol, position=pos_qty).info("Managing existing position - Checking trends...")
                     
-                    # Fetch 1-hour bars for EMA calculation (Need ~2 days for 20 EMA warmup)
+                    # Fetch 1-hour bars for EMA calculation (Need ~4 days for 20 EMA warmup in RTH)
+                    # 1 day = 6.5 hours. 4 days = 26 hours > 20.
                     bars_1h = _with_broker_lock(
                         broker.historical_prices,
                         symbol,
-                        duration="2 D", 
+                        duration="4 D", 
                         bar_size="1 hour",
                         what_to_show="TRADES",
                         use_rth=True
