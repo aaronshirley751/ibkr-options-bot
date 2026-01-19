@@ -7,10 +7,11 @@ import pandas as pd  # type: ignore
 # Whale debounce period: prevents rapid repeated signals on same symbol
 WHALE_DEBOUNCE_DAYS = 3
 # Lookback window for high/low and volume calculations (in 60-min bars)
-# 20 trading days ≈ 120 60-min bars (assuming 6 bars per trading day)
-WHALE_LOOKBACK_BARS = 120
+# 10 trading days ≈ 60 60-min bars (assuming 6 bars per trading day) - Tuned down from 20 days/120 bars
+WHALE_LOOKBACK_BARS = 60
 # Volume multiplier: unusual activity must exceed average by this factor
-WHALE_VOLUME_SPIKE_THRESHOLD = 1.5
+# Tuned down from 1.5 to 1.2 to capture more signals
+WHALE_VOLUME_SPIKE_THRESHOLD = 1.2
 # Confidence scoring weights
 WHALE_STRENGTH_WEIGHT = 0.6  # Weight of price extremity in confidence
 WHALE_VOLUME_WEIGHT = 0.4  # Weight of volume spike in confidence
