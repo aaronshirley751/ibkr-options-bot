@@ -2,13 +2,13 @@
 broker:
   host: "192.168.7.205"
   port: 4001
-  client_id: 265  # Changed to avoid conflict with stuck process
+  client_id: 267  # Changed to avoid conflict with stuck process
   read_only: false
 
 paper_trading: false
 dry_run: false
 
-symbols: ["TSLA", "NVDA", "AMD"]  # Tesla, Nvidia, AMD for Dynamic Trend Following
+symbols: ["SPY", "QQQ", "IWM", "GLD", "LMT", "NVDA", "TSLA"]  # Geopolitical Strategy Universe
 
 schedule:
   interval_seconds: 15  # Reduced to 15s for high-frequency checks
@@ -23,8 +23,8 @@ risk:
 options:
   expiry: "weekly"
   moneyness: "atm" # At-The-Money (Better liquidity/spreads for IWM)
-  max_spread_pct: 2.5 # Slightly wider allowed spread for IWM
-  min_volume: 50 # Lower volume threshold for IWM vs SPY
+  max_spread_pct: 6.0 # Widened to capture GLD/LMT in thin markets
+  min_volume: 10 # Lowered to capture LMT with Vol ~47
   strike_count: 3  # Reduced from 5 for 40% fewer options requests
 
 # Historical data configuration (prevents timeout issues)
@@ -37,7 +37,7 @@ historical:
 
 monitoring:
   alerts_enabled: true  # Master switch for all alerts
-  discord_webhook_url: "https://discord.com/api/webhooks/1458516278406025256/S8ACm-P6sb3KLpeQYJ6Osk2D4xQQITLHjrOpdcFVXq2YWyHhuDuQ53uib_AkKtqHMDnE"
+  discord_webhook_url: ""
   discord_username: "IBKR Whale Bot"
   heartbeat_url: ""
 

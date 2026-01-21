@@ -2,6 +2,7 @@
 black
 ruff
 pytest
+pytest-asyncio
 mypy
 types-PyYAML
 pre-commit

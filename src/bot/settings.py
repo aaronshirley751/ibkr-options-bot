@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import yaml  # type: ignore
-from pydantic import BaseModel, Field, field_validator  # type: ignore
+from pydantic import BaseModel, Field, field_validator, model_validator  # type: ignore
 from pydantic_settings import BaseSettings, SettingsConfigDict  # type: ignore
 
 
@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     symbols: List[str] = ["SPY", "QQQ"]
     mode: str = "growth"  # growth | hybrid
     dry_run: bool = False
+    
+    # Backwards compatibility for flat webhook URL from .env
+    discord_webhook_url: Optional[str] = Field(default=None, description="Legacy support for DISCORD_WEBHOOK_URL")
 
     # nested
     broker: BrokerSettings = BrokerSettings()
@@ -116,6 +119,13 @@ class Settings(BaseSettings):
     options: OptionsSettings = OptionsSettings()
     historical: HistoricalSettings = HistoricalSettings()
     monitoring: MonitoringSettings = MonitoringSettings()
+
+    @model_validator(mode="after")
+    def _merge_legacy_webhook(self) -> "Settings":
+        # Propagate flat DISCORD_WEBHOOK_URL to monitoring config if not set there
+        if self.discord_webhook_url and not self.monitoring.discord_webhook_url:
+            self.monitoring.discord_webhook_url = self.discord_webhook_url
+        return self
 
     @field_validator("mode")
     @classmethod

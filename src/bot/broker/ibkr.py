@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import math
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -186,6 +187,7 @@ class IBKRBroker:
                 ask = ticker.ask if (ticker.ask is not None and ticker.ask > 0) else None
                 last = ticker.last if (ticker.last is not None and ticker.last > 0) else None
                 close = ticker.close if ticker.close else None
+                volume = int(ticker.volume) if (ticker.volume is not None and not math.isnan(ticker.volume)) else 0
                 
                 if bid and ask:
                     price = last or close or ((bid + ask) / 2)
@@ -194,6 +196,7 @@ class IBKRBroker:
                         last=float(price),
                         bid=float(bid), 
                         ask=float(ask), 
+                        volume=volume,
                         time=time.time()
                     )
             return None
@@ -203,10 +206,10 @@ class IBKRBroker:
             if quote:
                 return quote
             logger.warning(f"market_data timeout for {symbol_str} after {timeout}s")
-            return Quote(symbol=symbol_str, last=0.0, bid=0.0, ask=0.0, time=time.time())
+            return Quote(symbol=symbol_str, last=0.0, bid=0.0, ask=0.0, volume=0, time=time.time())
         except Exception as e:
             logger.exception(f"market_data failed for {symbol_str}: {type(e).__name__}")
-            return Quote(symbol=symbol_str, last=0.0, bid=0.0, ask=0.0, time=time.time())
+            return Quote(symbol=symbol_str, last=0.0, bid=0.0, ask=0.0, volume=0, time=time.time())
 
     def option_chain(
         self, symbol: str, expiry_hint: str = "weekly"
@@ -261,71 +264,99 @@ class IBKRBroker:
         logger.info(f"Option chain for {symbol}: {len(expirations)} expirations, {len(strikes)} strikes")
         logger.debug(f"First 3 expirations: {expirations[:3]}, strike range: {strikes[0]}-{strikes[-1]}")
 
-        # pick expiry: next Friday for weekly
-        if expiry_hint == "weekly":
-            expiry = _next_friday_date(datetime.now(timezone.utc))
-            # if expiry not in expirations, choose the nearest future
-            if expiry not in expirations:
-                expiry = min(
-                    expirations,
-                    key=lambda d: abs(
-                        datetime.strptime(d, "%Y%m%d").date() - datetime.now(timezone.utc).date()
-                    ),
-                )
-        else:
-            expiry = expirations[0]
+        # Determine target expiries based on hint
+        target_expiries = []
+        
+        if expiry_hint.startswith("dte:"):
+            try:
+                # Parse hint format "dte:min-max"
+                _, rng = expiry_hint.split(":", 1)
+                d_min, d_max = map(int, rng.split("-"))
+                now_date = datetime.now(timezone.utc).date()
+                
+                # Filter expirations falling within DTE range
+                valid_exps = []
+                for e in expirations:
+                    try:
+                        d = datetime.strptime(e, "%Y%m%d").date()
+                        days = (d - now_date).days
+                        if d_min <= days <= d_max:
+                            valid_exps.append(e)
+                    except ValueError:
+                        continue
+                
+                if valid_exps:
+                    # Take up to 3 expirations to broaden search without overloading
+                    target_expiries = valid_exps[:3]
+                    logger.info(f"DTE hint {d_min}-{d_max} matched {len(target_expiries)} expiries: {target_expiries}")
+                else:
+                    logger.warning(f"No expirations found for {symbol} in DTE range {d_min}-{d_max}")
+            except Exception as e:
+                logger.warning(f"Failed to parse DTE hint '{expiry_hint}': {e}")
 
-        # REFACTOR: Validate strikes for this specific expiry to avoid "phantom contracts"
-        # reqSecDefOptParams returns a superset of strikes. Not all exist for every expiry.
-        # We query reqContractDetails to get the exact list of valid strikes for this expiry.
-        try:
-            # Wildcard search for the specific expiry we chose
-            logger.info(f"Validating contracts for expiry {expiry} via reqContractDetails...")
-            validate_contract = Option(symbol, lastTradeDateOrContractMonth=expiry, exchange="SMART", currency="USD")
-            
-            # Use sync call (safe within IB context usually) or util.run if needed. 
-            # Given previous pattern used util.run for params, we'll try standard sync first.
-            # If this hangs, we may need util.run(ib.reqContractDetailsAsync(...))
-            details = self.ib.reqContractDetails(validate_contract)
-            
-            if details:
-                valid_strikes = sorted(list(set(d.contract.strike for d in details)))
-                logger.info(f"Broadcast {len(valid_strikes)} valid strikes for {expiry} (was {len(strikes)} in cache)")
-                strikes = valid_strikes
+        # Fallback if no DTE hint or no matches
+        if not target_expiries:
+            if expiry_hint == "weekly":
+                expiry = _next_friday_date(datetime.now(timezone.utc))
+                # if expiry not in expirations, choose the nearest future
+                if expiry not in expirations:
+                    expiry = min(
+                        expirations,
+                        key=lambda d: abs(
+                            datetime.strptime(d, "%Y%m%d").date() - datetime.now(timezone.utc).date()
+                        ),
+                    )
+                target_expiries = [expiry]
             else:
-                logger.warning(f"No contract details found for {symbol} {expiry}; falling back to cached strikes (risky)")
-        except Exception as e:
-            logger.warning(f"Failed to validate strikes via reqContractDetails: {e}; falling back to cached strikes")
+                target_expiries = [expirations[0]]
 
-        # get last price to find ATM
+        # Get last price once for ATM calculation
         quote = self.market_data(symbol)
         last = quote.last or 0.0
-        if not strikes:
-            return []
-        atm = min(strikes, key=lambda s: abs(s - last))
-        
-        # Find ATM index and return ATM +/- 5 strikes for flexibility
-        atm_idx = strikes.index(atm)
-        start_idx = max(0, atm_idx - 5)
-        end_idx = min(len(strikes), atm_idx + 6)
-        strike_range = strikes[start_idx:end_idx]
-        
-        logger.info(f"Returning {len(strike_range)} strikes around ATM {atm} (range: {strike_range[0]}-{strike_range[-1]})")
 
-        contracts: List[OptionContract] = []
-        # create contracts for ATM +/- 5 strikes, both calls and puts
-        for strike in strike_range:
-            for right in ("C", "P"):
-                contracts.append(
-                    OptionContract(
-                        symbol=symbol,
-                        right=right,
-                        strike=float(strike),
-                        expiry=expiry,
-                        multiplier=100,
+        all_contracts: List[OptionContract] = []
+
+        for expiry in target_expiries:
+            # Validate strikes for this specific expiry
+            current_strikes = strikes # fallback to all strikes
+            try:
+                logger.info(f"Validating contracts for expiry {expiry} via reqContractDetails...")
+                validate_contract = Option(symbol, lastTradeDateOrContractMonth=expiry, exchange="SMART", currency="USD")
+                details = self.ib.reqContractDetails(validate_contract)
+                
+                if details:
+                    valid_strikes = sorted(list(set(d.contract.strike for d in details)))
+                    current_strikes = valid_strikes
+                else:
+                    logger.warning(f"No contract details found for {symbol} {expiry}; falling back to cached strikes")
+            except Exception as e:
+                logger.warning(f"Failed to validate strikes for {expiry}: {e}")
+
+            if not current_strikes:
+                continue
+
+            atm = min(current_strikes, key=lambda s: abs(s - last))
+            
+            # Find ATM index and return ATM +/- 10 strikes (expanded range for strategic OTM search)
+            atm_idx = current_strikes.index(atm)
+            start_idx = max(0, atm_idx - 10)
+            end_idx = min(len(current_strikes), atm_idx + 11)
+            strike_range = current_strikes[start_idx:end_idx]
+
+            for strike in strike_range:
+                for right in ("C", "P"):
+                    all_contracts.append(
+                        OptionContract(
+                            symbol=symbol,
+                            right=right,
+                            strike=float(strike),
+                            expiry=expiry,
+                            multiplier=100,
+                        )
                     )
-                )
-        return contracts
+        
+        logger.info(f"Returning {len(all_contracts)} contracts across {len(target_expiries)} expiries")
+        return all_contracts
 
     def _to_ib_contract(self, oc: OptionContract) -> Contract:
         return Option(

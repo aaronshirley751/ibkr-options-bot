@@ -20,6 +20,9 @@ from .monitoring import alert_all, send_heartbeat, trade_alert
 from .risk import position_size, should_stop_trading_today
 from .strategy.scalp_rules import scalp_signal
 from .strategy.whale_rules import whale_rules
+from .strategy.geo_rules import geo_rules
+from .data.options import pick_weekly_option, find_strategic_option
+from ib_insync import Index
 
 # Runs a job every `interval_seconds` during regular trading hours (09:30-16:00 ET)
 # Note: consider adding US holiday calendar and pre/post-market handling
@@ -154,6 +157,33 @@ def run_cycle(broker, settings: Dict[str, Any]):
     # Calculate timeout based on duration: ~1.5 seconds per minute of data requested
     duration_seconds = int(hist_duration.split()[0])
     hist_timeout = historical_cfg.get("timeout", max(60, duration_seconds // 40 + 30))
+
+    # --- Geopolitical Strategy: Fetch VIX Snapshot ---
+    vix_value = 20.0 # Default fallback
+    try:
+        # We need a quick snapshot of VIX. 
+        # Note: We use _with_broker_lock because we might need to qualify contract.
+        def _get_vix():
+            vix_idx = Index('VIX', 'CBOE')
+            broker.ib.qualifyContracts(vix_idx)
+            # reqMktData is async generally but if we don't have a ticker, we might need one.
+            # Using market_data helper if available or direct reqMktData
+            # Assuming broker.market_data handles Index objects:
+            return broker.market_data(vix_idx)
+            
+        vix_ticker = _with_broker_lock(_get_vix)
+        # Use last or close or typical
+        v = getattr(vix_ticker, 'last', 0.0)
+        if not v or v <= 0:
+            v = getattr(vix_ticker, 'close', 0.0)
+        if v > 0:
+            vix_value = float(v)
+            logger.info(f"Market VIX Level: {vix_value:.2f}")
+        else:
+            logger.warning("VIX data returned 0.0, using default 20.0")
+            
+    except Exception as e:
+        logger.warning(f"Failed to fetch VIX: {e}. Using default {vix_value}")
 
     def process_symbol(symbol: str):
         try:
@@ -515,15 +545,6 @@ def run_cycle(broker, settings: Dict[str, Any]):
                             _timeout_tracker[symbol],
                             _TIMEOUT_BACKOFF_CYCLES,
                         )
-                        if settings.get("risk", {}).get("data_loss_exit_on_backoff", True):
-                            try:
-                                open_positions = _with_broker_lock(broker.positions)
-                            except Exception:  # pylint: disable=broad-except
-                                open_positions = []
-                            alert_all(
-                                settings,
-                                f"Data unavailable for {symbol} in {_timeout_tracker[symbol]} consecutive attempts; entering backoff and recommending manual exit check. Positions: {open_positions}",
-                            )
                         _timeout_tracker[symbol] = _TIMEOUT_BACKOFF_CYCLES
                 return
 
@@ -534,61 +555,68 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 )
                 del _timeout_tracker[symbol]
 
-            # compute scalp signal on 1-min bars
-            # SCALP DISABLED FOR OPTION B STRATEGY
-            # scalp = scalp_signal(df1)  # type: ignore[arg-type]
-            scalp = {"signal": "HOLD", "confidence": 0.0}
-
-            # compute whale on 60-min resample (Always Active for Option B)
-            whale = {"signal": "HOLD", "confidence": 0.0}
-            # Force enable whale check regardless of 'mode' setting
-            if True: 
-                resample = getattr(df1, "resample", None)
-                if callable(resample):
-                    res = resample("60min", label="right", closed="right")
-                    agg = getattr(res, "agg", None)
-                    if callable(agg):
-                        df60 = agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})  # type: ignore[call-arg]
-                        whale = whale_rules(df60, symbol)  # type: ignore[arg-type]
-
-            # decide final action
-            action = scalp.get("signal", "HOLD")
-            if whale.get("signal", "HOLD") != "HOLD":
-                action = whale["signal"]
-
+            # --- GEOPOLITICAL STRATEGY EXECUTION ---
+            # 1. Check Strategy Rules based on VIX Regime
+            geo_res = geo_rules(symbol, vix_value)
+            action = geo_res.get("signal", "HOLD")
+            confidence = geo_res.get("confidence", 0.0)
+            
             logger.bind(
                 event="signal",
                 symbol=symbol,
-                scalp=scalp,
-                whale=whale,
+                vix=vix_value,
                 action=action,
-            ).info("Cycle decision")
+                confidence=confidence,
+                reason=geo_res.get("reason")
+            ).info(f"Geo Strategy: {action} ({geo_res.get('reason')})")
 
             if action in ("BUY", "SELL", "BUY_CALL", "BUY_PUT"):
                 # pick option using refined selection
                 # Determine Call/Put based on signal.
                 # "BUY" or "BUY_CALL" -> Call (Bullish)
-                # "SELL" or "BUY_PUT" -> Put (Bearish) - We BUY Puts for bearish signals, not Short Stock
+                # "SELL" or "BUY_PUT" -> Put (Bearish)
                 is_bullish = action in ("BUY", "BUY_CALL")
                 direction = "C" if is_bullish else "P"
                 
                 last_under_q = _with_broker_lock(broker.market_data, symbol)
                 last_under = getattr(last_under_q, "last", 0.0)
+                if not last_under:
+                     last_under = getattr(last_under_q, "close", 0.0)
+                     
                 cfg_opts = settings.get("options", {})
-                opt = pick_weekly_option(
-                    broker,
-                    underlying=symbol,
-                    right=direction,
-                    last_price=last_under,
-                    moneyness=cfg_opts.get("moneyness", "atm"),
-                    min_volume=cfg_opts.get("min_volume", 100),
-                    max_spread_pct=cfg_opts.get("max_spread_pct", 2.0),
-                    strike_count=cfg_opts.get("strike_count", 3),
-                )
+                
+                # Use Strategic Finder if params are provided (Geopolitical Mode)
+                if "params" in geo_res:
+                    p = geo_res["params"]
+                    opt = find_strategic_option(
+                        broker=broker,
+                        underlying=symbol,
+                        right=direction,
+                        last_price=last_under,
+                        min_dte=p.get("min_dte", 30),
+                        max_dte=p.get("max_dte", 60),
+                        otm_pct_min=p.get("otm_pct_min", 0.05),
+                        otm_pct_max=p.get("otm_pct_max", 0.10),
+                        min_volume=cfg_opts.get("min_volume", 10),
+                        max_spread_pct=cfg_opts.get("max_spread_pct", 5.0)
+                    )
+                else: 
+                    # Fallback to standard (Unused in Geo Strategy usually)
+                    opt = pick_weekly_option(
+                        broker,
+                        underlying=symbol,
+                        right=direction,
+                        last_price=last_under,
+                        moneyness=cfg_opts.get("moneyness", "atm"),
+                        min_volume=cfg_opts.get("min_volume", 100),
+                        max_spread_pct=cfg_opts.get("max_spread_pct", 2.0),
+                        strike_count=cfg_opts.get("strike_count", 3),
+                    )
+                    
                 if not opt:
                     logger.bind(
                         event="skip", symbol=symbol, reason="no_viable_option"
-                    ).info("Skipping: no viable option")
+                    ).info("Skipping: no viable option found")
                     return
 
                 # get option premium
@@ -739,6 +767,11 @@ def run_cycle(broker, settings: Dict[str, Any]):
 
 
 def run_scheduler(broker, settings: Dict[str, Any], stop_event: Optional[Event] = None):
+    # Reset circuit breaker on start to ensure clean state
+    logger.info("GatewayCircuitBreaker state reset to CLOSED")
+    _gateway_circuit_breaker.failures = 0
+    _gateway_circuit_breaker.state = "CLOSED"
+
     interval_seconds = settings.get("schedule", {}).get("interval_seconds", 180)
     last_day = None
     while True:

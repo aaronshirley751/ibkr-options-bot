@@ -4,6 +4,26 @@ Lightweight scaffold for an IBKR options trading bot with clean layers (broker, 
 
 ---
 
+## Session Summary (2026-01-21 Geopolitical Strategy Live) 🌍 LIVE TESTING
+
+**Successfully integrated and tested the VIX-based Geopolitical Strategy.**
+
+### Major Achievements
+1.  **Strategy Integrated**: VIX Regime detection active. Bot correctly identified "Elevated Regime" and generated "Flight to Safety" (BUY_CALL) signals for GLD/LMT.
+2.  **Logic Validated**: Fixed critical DTE calculation bugs; bot now correctly finds options 60-90 days out.
+3.  **Resilience**: Implemented VIX timeout fallbacks and resolved Gateway connection lock issues (Client ID collisions).
+4.  **Liquidity Guards**: Confirmed strict filters (Spread < 6%) are working, though currently filtering out many LMT opportunities.
+
+### Current Status
+-   **Mode**: LIVE TESTING
+-   **Strategy**: Geopolitical (VIX-based Regime Switching)
+-   **Status**: Stopped (Clean Shutdown).
+-   **Next Steps**: Tune liquidity filters for LMT, investigate VIX data latency on Gateway.
+
+📖 **Full Report**: [SESSION_SUMMARY_2026_01_21.md](SESSION_SUMMARY_2026_01_21.md)
+
+---
+
 ## Session Summary (2026-01-14 Stability Confirmed) ✅ LIVE STABLE
 
 **Critical "Process Termination" bug resolved. System achieved 48 minutes of flawless continuous runtime.**

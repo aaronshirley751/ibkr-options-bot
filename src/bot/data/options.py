@@ -135,3 +135,147 @@ def pick_weekly_option(
     # choose the most liquid (lowest spread pct)
     viable.sort(key=lambda t: (t[1], _strike_distance(t[0])))
     return viable[0][0]
+
+
+def find_strategic_option(
+    broker,
+    underlying: str,
+    right: str,
+    last_price: float,
+    min_dte: int = 30,
+    max_dte: int = 60,
+    otm_pct_min: float = 0.05,
+    otm_pct_max: float = 0.10,
+    min_volume: int = 10,
+    max_spread_pct: float = 5.0,
+) -> Optional[object]:
+    """Find a specific OTM option matching DTE and Moneyness criteria.
+
+    Args:
+        broker: Broker instance
+        underlying: Symbol (e.g., "SPY")
+        right: "C" or "P"
+        last_price: Current price of underlying
+        min_dte: Minimum days to expiration
+        max_dte: Maximum days to expiration
+        otm_pct_min: Minimum % Out of The Money (e.g., 0.05 for 5%)
+        otm_pct_max: Maximum % Out of The Money (e.g., 0.10 for 10%)
+        min_volume: Minimum volume filter
+        max_spread_pct: Maximum allowed spread filter
+
+    Returns:
+        Best matching OptionContract or None
+    """
+    try:
+        # Request chain with DTE hint to allow broker to optimize expiry selection
+        contracts = broker.option_chain(underlying, expiry_hint=f"dte:{min_dte}-{max_dte}")
+        if not contracts and min_dte < 7:
+            # Fallback to weekly if short term requested
+            contracts = broker.option_chain(underlying, expiry_hint="weekly")
+    except (ConnectionError, TimeoutError, AttributeError) as e:
+        logger.exception("option_chain failed for %s: %s", underlying, type(e).__name__)
+        return None
+
+    if not contracts:
+        return None
+
+    # Filter by Right
+    contracts = [c for c in contracts if getattr(c, "right", "").upper() == right.upper()]
+    
+    if not contracts:
+        logger.warning(f"No {right} contracts found for {underlying}")
+        return None
+
+    # Filter by DTE
+    valid_dte = []
+    today = datetime.now().date()
+    
+    for c in contracts:
+        # Parse expiry 'YYYYMMDD' (handle both ib_insync and OptionContract attributes)
+        expiry_str = getattr(c, "lastTradeDateOrContractMonth", getattr(c, "expiry", ""))
+        if not expiry_str:
+            continue
+        try:
+            exp_date = datetime.strptime(expiry_str, "%Y%m%d").date()
+        except ValueError:
+            continue
+            
+        dte = (exp_date - today).days
+        if min_dte <= dte <= max_dte:
+            valid_dte.append(c)
+            
+    if not valid_dte:
+        logger.warning(f"No contracts found for {underlying} with DTE {min_dte}-{max_dte}")
+        return None
+        
+    # Filter by Moneyness (OTM %)
+    # Call OTM: Strike > Price.  % OTM = (Strike - Price) / Price
+    # Put OTM: Strike < Price.   % OTM = (Price - Strike) / Price
+    
+    valid_strikes = []
+    for c in valid_dte:
+        strike = float(getattr(c, "strike", 0.0))
+        if right.upper() == "C":
+            if strike <= last_price: continue # ITM or ATM
+            otm_pct = (strike - last_price) / last_price
+        else: # Put
+            if strike >= last_price: continue # ITM or ATM
+            otm_pct = (last_price - strike) / last_price
+            
+        if otm_pct_min <= otm_pct <= otm_pct_max:
+            valid_strikes.append(c)
+            
+    if not valid_strikes:
+        logger.warning(f"No contracts found for {underlying} {right} with OTM {otm_pct_min*100}-{otm_pct_max*100}%")
+        return None
+        
+    # Sort by Volume/Liquidity
+    # We need market data to verify liquidity. Limit candidates to reduce spam.
+    # heuristic: pick strikes closest to center of OTM range first?
+    # Or just check all valid ones (usually not too many in a 5% band)
+    
+    viable = []
+    # Check up to 10 candidates to save time
+    candidates = valid_strikes[:10] 
+    
+    for c in candidates:
+        try:
+            q = broker.market_data(c)
+        except Exception as e:
+            logger.debug(f"market_data err for {c}: {e}")
+            continue
+            
+        bid = float(getattr(q, "bid", 0.0) or 0.0)
+        ask = float(getattr(q, "ask", 0.0) or 0.0)
+        vol = int(getattr(q, "volume", 0) or 0)
+        
+        if vol < min_volume:
+            logger.debug(f"Reject {c}: Vol {vol} < {min_volume}")
+            continue
+        if bid <= 0: # Ensure valid quote
+            logger.debug(f"Reject {c}: Bid {bid} <= 0 (Ask={ask})")
+            continue
+            
+        abs_spread = ask - bid
+        mid = (ask + bid) / 2.0
+        spread_pct = (abs_spread / mid) * 100.0 if mid > 0 else 100.0
+        
+        if spread_pct > max_spread_pct:
+            logger.debug(f"Reject {c}: Spread {spread_pct:.2f}% > {max_spread_pct}%")
+            continue
+            
+        # Score: We want high volume, low spread. 
+        # But critically: we want CHEAPEST valid option for small accounts? 
+        # Or just "Liquid". Let's optimize for Liquidity (Volume).
+        viable.append((c, vol, spread_pct, bid))
+        
+    if not viable:
+        return None
+        
+    # Sort by Volume (descending) then Spread (ascending)
+    viable.sort(key=lambda x: (-x[1], x[2]))
+    
+    best = viable[0][0]
+    logger.info(f"Selected option for {underlying}: {best} Strike={best.strike} Bid={viable[0][3]}")
+    return best
+

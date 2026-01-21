@@ -8,6 +8,7 @@ class Quote:
     last: float
     bid: float
     ask: float
+    volume: int
     time: float  # epoch
 
 
