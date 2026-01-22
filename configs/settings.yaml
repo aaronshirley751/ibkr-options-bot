@@ -2,13 +2,13 @@
 broker:
   host: "192.168.7.205"
   port: 4001
-  client_id: 267  # Changed to avoid conflict with stuck process
+  client_id: 275  # Changed to 275 to avoid conflict
   read_only: false
 
 paper_trading: false
 dry_run: false
 
-symbols: ["SPY", "QQQ", "IWM", "GLD", "LMT", "NVDA", "TSLA"]  # Geopolitical Strategy Universe
+symbols: ["SPY", "QQQ", "IWM", "META", "GOOG", "NVDA", "TSLA", "AMD"]  # Wharton 'Risk-On' Rotation
 
 schedule:
   interval_seconds: 15  # Reduced to 15s for high-frequency checks
@@ -17,7 +17,7 @@ schedule:
 risk:
   max_daily_loss_pct: 0.15 
   max_risk_pct_per_trade: 0.80 # Aggressive: 80% of account per trade (Small account growth)
-  take_profit_pct: null # Dynamic Exit (EMA Trailing)
+  take_profit_pct: 0.20 # Fixed Target: +20% Gain
   stop_loss_pct: 0.05 # Hard Stop: -5% Option (Survival)
 
 options:
@@ -29,9 +29,9 @@ options:
 
 # Historical data configuration (prevents timeout issues)
 historical:
-  duration: "4 D"         # 4 days of data to ensure >20 hourly bars for EMA
-  use_rth: true           # Regular Trading Hours only (faster than extended hours)
-  bar_size: "1 min"       # 1-minute bars
+  duration: "2 D"        # 2 days for 5-min bars (approx 150 bars)
+  use_rth: true           # Regular Trading Hours only
+  bar_size: "5 mins"      # 5-min bars for Aggressive Daily Volume
   what_to_show: "TRADES"  # Trade data
   timeout: 90             # 90 seconds timeout for historical requests
 

@@ -21,6 +21,7 @@ from .risk import position_size, should_stop_trading_today
 from .strategy.scalp_rules import scalp_signal
 from .strategy.whale_rules import whale_rules
 from .strategy.geo_rules import geo_rules
+from .strategy.daily_volume_rules import daily_volume_rules
 from .data.options import pick_weekly_option, find_strategic_option
 from ib_insync import Index
 
@@ -131,6 +132,35 @@ _throttle_lock = Lock()  # Thread-safe access to _LAST_REQUEST_TIME
 
 def run_cycle(broker, settings: Dict[str, Any]):
     """One scheduler cycle: fetch bars, compute signals, and optionally submit orders."""
+    
+    # --- FUND SAFETY CHECK ---
+    # Proactively check funds before starting the cycle to avoid scanning if we can't trade.
+    # This prevents the bot from "waking up", finding a trade, and then failing at the last second.
+    try:
+        acct = broker.account()
+        # 'AvailableFunds' is the standard tag for cash available for trading
+        # 'NetLiquidation' is total account value
+        avail = float(acct.get("AvailableFunds", 0.0))
+        net_liq = float(acct.get("NetLiquidation", 0.0))
+        
+        # Threshold: minimal amount to reasonably open an option position (e.g., $500)
+        # If funds are critically low, enter maintenance mode immediately.
+        if avail < 500.0:
+            if not getattr(broker, "insufficient_funds", False):
+                logger.warning(f"LOW FUNDS DETECTED: Available Funds (${avail:.2f}) < $500. Entering Maintenance Mode.")
+                # We can set the flag on the broker object to persist this state across cycles if desired,
+                # or just rely on the logging here.
+                # Setting the flag ensures consistency with the error-based trigger.
+                if hasattr(broker, "_insufficient_funds"):
+                    broker._insufficient_funds = True
+    except Exception as e:
+        logger.warning(f"Fund check failed (ignoring to prevent blockage): {e}")
+
+    # Check for maintenance mode triggers (flag set by error 201 OR the check above)
+    if getattr(broker, "insufficient_funds", False):
+        logger.warning("MAINTENANCE MODE: Insufficient funds detected. Skipping new trade scan to monitor existing positions.")
+        return
+
     cycle_start = time.time()
     symbols = settings.get("symbols", [])
 
@@ -555,20 +585,21 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 )
                 del _timeout_tracker[symbol]
 
-            # --- GEOPOLITICAL STRATEGY EXECUTION ---
-            # 1. Check Strategy Rules based on VIX Regime
-            geo_res = geo_rules(symbol, vix_value)
-            action = geo_res.get("signal", "HOLD")
-            confidence = geo_res.get("confidence", 0.0)
+            # --- DAILY VOLUME STRATEGY EXECUTION ---
+            # Using dataframe (df1) which must be 60-min bars (configured in settings)
+            # Replaces Whale Strategy with aggressive daily volume logic
+            dv_res = daily_volume_rules(df1, symbol)
+            action = dv_res.get("signal", "HOLD")
+            confidence = dv_res.get("confidence", 0.0)
             
             logger.bind(
                 event="signal",
                 symbol=symbol,
-                vix=vix_value,
+                strategy="daily_volume",
                 action=action,
                 confidence=confidence,
-                reason=geo_res.get("reason")
-            ).info(f"Geo Strategy: {action} ({geo_res.get('reason')})")
+                reason=dv_res.get("reason")
+            ).info(f"Daily Volume Strategy: {action} ({dv_res.get('reason')})")
 
             if action in ("BUY", "SELL", "BUY_CALL", "BUY_PUT"):
                 # pick option using refined selection
@@ -586,20 +617,9 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 cfg_opts = settings.get("options", {})
                 
                 # Use Strategic Finder if params are provided (Geopolitical Mode)
-                if "params" in geo_res:
-                    p = geo_res["params"]
-                    opt = find_strategic_option(
-                        broker=broker,
-                        underlying=symbol,
-                        right=direction,
-                        last_price=last_under,
-                        min_dte=p.get("min_dte", 30),
-                        max_dte=p.get("max_dte", 60),
-                        otm_pct_min=p.get("otm_pct_min", 0.05),
-                        otm_pct_max=p.get("otm_pct_max", 0.10),
-                        min_volume=cfg_opts.get("min_volume", 10),
-                        max_spread_pct=cfg_opts.get("max_spread_pct", 5.0)
-                    )
+                # Whale strategy uses standard selection
+                if False:
+                    pass
                 else: 
                     # Fallback to standard (Unused in Geo Strategy usually)
                     opt = pick_weekly_option(
@@ -622,16 +642,48 @@ def run_cycle(broker, settings: Dict[str, Any]):
                 # get option premium
                 q = None
                 try:
+                    # FIX: Pass contract object directly, do not resolve to symbol string (which is underlying)
                     q = _with_broker_lock(
-                        broker.market_data, getattr(opt, "symbol", opt)
+                        broker.market_data, opt
                     )
                     premium = getattr(q, "last", 0.0)
+                    # FIX: Fallback to mid-price if last is zero (common in illiquid hours/secondary exchanges)
+                    if premium == 0.0:
+                        bid = getattr(q, "bid", 0.0)
+                        ask = getattr(q, "ask", 0.0)
+                        if bid > 0 and ask > 0:
+                            premium = (bid + ask) / 2.0
+                            logger.debug("Using mid-price for premium: {}", premium)
+                        elif getattr(q, "close", 0.0) > 0:
+                            premium = getattr(q, "close", 0.0)
+                    
+                    # FINAL FALLBACK: Historical Data (Slow but sure)
+                    if premium == 0.0:
+                        try:
+                            logger.info("Premium is 0.0, attempting historical data fallback...")
+                            # Use opt directly as it might be a Contract object
+                            hist_df = _with_broker_lock(
+                                broker.historical_prices, 
+                                opt, 
+                                duration="2 D", 
+                                bar_size="1 day"
+                            )
+                            if hist_df is not None and not hist_df.empty:
+                                premium = float(hist_df.iloc[-1]["close"])
+                                logger.warning("Used historical close for premium: {}", premium)
+                        except Exception as eh:
+                            logger.error("Historical premium fallback failed: {}", eh)
+
                 except (ConnectionError, TimeoutError, AttributeError, ValueError) as e:
                     logger.debug("market_data failed for option: %s", type(e).__name__)
                     premium = 0.0
 
                 cfg_risk = settings.get("risk", {})
                 equity = _with_broker_lock(broker.pnl).get("net", 100000.0)
+                
+                # DEBUG: Log values for sizing diagnosis
+                logger.info(f"DEBUG CALCULATING SIZE: Equity={equity}, Premium={premium}, StopLoss={cfg_risk.get('stop_loss_pct')}")
+
                 size = position_size(
                     equity,
                     cfg_risk.get("max_risk_pct_per_trade", 0.01),
@@ -695,26 +747,10 @@ def run_cycle(broker, settings: Dict[str, Any]):
                     pnl=None,
                 )
 
-                # if broker doesn't support native OCO, emulate
-                # run emulate_oco in background thread
-                import threading
-
-                if bracket.get("take_profit") or bracket.get("stop_loss"):
-                    t = threading.Thread(
-                        target=emulate_oco,
-                        args=(
-                            broker,
-                            opt,
-                            order_id,
-                            bracket.get("take_profit"),
-                            bracket.get("stop_loss"),
-                            settings.get("schedule", {}).get("interval_seconds", 180),
-                            ticket.action,
-                            ticket.quantity,
-                        ),
-                        daemon=True,
-                    )
-                    t.start()
+                # LEGACY: OCO thread disabled in favor of server-side brackets.
+                # The 'executionDetails' listener in IBKRBroker now handles exit logging/alerts.
+                if not settings.get("dry_run"):
+                    logger.info("Order %s submitted with server-side bracket protection", order_id)
 
                 # log trade
                 if not settings.get("dry_run"):

@@ -49,6 +49,22 @@ class IBKRBroker:
         self.client_id = client_id
         self.paper = paper
         self.ib = IB() if IB else None
+        self._insufficient_funds = False
+        
+        if self.ib:
+            self.ib.errorEvent += self._on_ib_error
+
+    def _on_ib_error(self, reqId: int, errorCode: int, errorString: str, contract: Any):
+        """Handle IBKR error events to detect critical states."""
+        # 201: Order rejected - Reason: Insufficient funds
+        # 202: Order cancelled
+        if errorCode == 201:
+            logger.error(f"CRITICAL: Insufficient funds detected (Error {errorCode}). Marking account as restricted.")
+            self._insufficient_funds = True
+
+    @property
+    def insufficient_funds(self) -> bool:
+        return self._insufficient_funds
 
     @retry(
         wait=wait_exponential(min=1, max=10),
@@ -109,6 +125,32 @@ class IBKRBroker:
             logger.exception("IB connect failed: {}", exc)
             raise
 
+        # Register execution details listener upon successful connection
+        self.ib.execDetailsEvent += self._on_exec_details
+        logger.info("Registered execution listener")
+
+    def _on_exec_details(self, trade: Any, fill: Any):
+        """Handle execution details (fills) from IBKR."""
+        try:
+            logger.bind(
+                event="fill",
+                symbol=trade.contract.symbol,
+                action=fill.execution.side,
+                qty=fill.execution.shares,
+                price=fill.execution.price
+            ).info(
+                "Execution: {} {} {} @ {}", 
+                fill.execution.side, 
+                fill.execution.shares, 
+                trade.contract.symbol,
+                fill.execution.price
+            )
+            
+            # FUTURE: Trigger Discord Alert here if it's a closing trade (SELL)
+            # This would require injecting the alert/settings context or using a global callback
+        except Exception as e:
+            logger.error("Error handling execution details: {}", e)
+
     def is_connected(self) -> bool:
         return bool(self.ib and self.ib.isConnected())
     
@@ -145,13 +187,16 @@ class IBKRBroker:
         if not self.is_connected():
             self.connect()
         
-        from ib_insync import util, Option
+        from ib_insync import util, Option, Contract
         import asyncio
         
         # Handle both string symbols (stocks) and OptionContract objects (options)
         if isinstance(symbol, str):
             contract = Stock(symbol, "SMART", "USD")
             symbol_str = symbol
+        elif isinstance(symbol, Contract):
+            contract = symbol
+            symbol_str = f"{contract.symbol} {contract.secType}"
         else:
             # If it's already a Contract-compatible object (like OptionContract from options.py), 
             # we should avoid reconstructing it locally if possible, or reconstruct accurately.
